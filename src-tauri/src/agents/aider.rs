@@ -84,13 +84,15 @@ impl EngineAdapter for AiderAdapter {
 pub(crate) fn build_aider_command(opts: &SpawnOptions) -> Result<(String, Vec<String>), String> {
   let mut args: Vec<String> = Vec::new();
 
-  // Aider her zaman --message ile çalıştırılır (interactive PTY yerine görev modu).
+  // Aider görev modunda --message ile çalışır; task_file içeriği prompt olarak geçer.
+  // task_file yoksa interaktif oturum başlatılır (flag'siz — claude REPL'i gibi).
   if let Some(content) = read_task_content(&opts.task_file)? {
     args.push("--message".to_string());
     args.push(content);
   } else if opts.non_interactive {
-    // Prompt yoksa boş mesaj yerine açıklayıcı hata ver.
-    return Err("aider için --message gereklidir (task_file veya non_interactive prompt)".to_string());
+    return Err(
+      "aider için --message gereklidir (non_interactive modda task_file zorunlu)".to_string(),
+    );
   }
 
   if let Some(model) = &opts.model {
@@ -124,9 +126,19 @@ mod tests {
   }
 
   #[test]
-  fn aider_requires_message() {
-    // task_file yok ve non_interactive değil → hata (interactive PTY yerine görev modu).
-    assert!(build_aider_command(&base_opts()).is_err());
+  fn aider_interactive_without_task_file() {
+    // task_file yok + non_interactive değil → interactive oturum (hata değil).
+    let (program, args) = build_aider_command(&base_opts()).unwrap();
+    assert_eq!(program, "aider");
+    assert!(args.is_empty());
+  }
+
+  #[test]
+  fn aider_non_interactive_without_task_file_errors() {
+    // non_interactive + task_file yok → açıklayıcı hata (boş --message üretme).
+    let mut opts = base_opts();
+    opts.non_interactive = true;
+    assert!(build_aider_command(&opts).is_err());
   }
 
   #[test]

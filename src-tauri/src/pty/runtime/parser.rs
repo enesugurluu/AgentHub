@@ -292,9 +292,10 @@ mod tests {
   fn claude_parser_result_failure() {
     let mut parser = ClaudeStreamJsonParser::default();
     let mut signals = Vec::new();
-    // Not: raw string içinde `\n` escape DEĞİLDİR — satır sonu gerçek newline olmalı.
+    // Raw string: `\n` escape değildir, gerçek newline'dır — JSON tırnakları `\"` olmaz.
     parser.feed(
-      b"{\"type\":\"result\",\"subtype\":\"error_network\",\"result\":\"network down\"}\n",
+      br#"{"type":"result","subtype":"error_network","result":"network down"}
+"#,
       &mut signals,
     );
     assert!(matches!(&signals[0], OutputSignal::TaskFailed { .. }));

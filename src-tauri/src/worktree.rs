@@ -199,13 +199,15 @@ pub fn worktree_remove(
             Ok(())
         }
         // commit_and_keep: değişiklikleri commit'le ve sakla (docs 6.2 "Commit'le sakla").
+        // NOT: metadata (.agenthub.json) untracked olduğundan commit öncesi silinir;
+        // aksi halde çalışma ağacı commit sonrası kirli kalırdı.
         "commit_and_keep" => {
+            fs::remove_file(&metadata_path).map_err(|e| format!("Metadata silinemedi: {e}"))?;
             run_git_command(wt_path, &["add", "-A"])
                 .map_err(|e| format!("Commit hazırlanamadı: {e}"))?;
             let msg = format!("agenthub: preserve worktree for {}", info.agent_name);
             // Değişiklik yoksa commit hata verir — bu kabul edilebilir (dizin zaten temiz).
             let _ = run_git_command(wt_path, &["commit", "-m", &msg]);
-            fs::remove_file(&metadata_path).map_err(|e| format!("Metadata silinemedi: {e}"))?;
             Ok(())
         }
         // delete (varsayılan): mevcut davranış.
