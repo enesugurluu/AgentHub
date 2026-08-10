@@ -1,16 +1,28 @@
-import { BotIcon, CircleDollarSignIcon, FolderGit2Icon, KeyRoundIcon } from 'lucide-react'
+import {
+  BotIcon,
+  CircleDollarSignIcon,
+  ClipboardListIcon,
+  FolderGit2Icon,
+  KeyRoundIcon,
+} from 'lucide-react'
+import { useState } from 'react'
 
+import { FireButton } from '@/components/Settings/FireDialog'
+import { TaskDialog } from '@/components/Tasks/TaskDialog'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { useAgentStore } from '@/store/agents'
+import { selectVisibleAgents, useAgentStore } from '@/store/agents'
 import { useTerminalStore } from '@/store/terminal'
 
 export function InspectorPanel() {
   const { agents, selectedAgentId } = useAgentStore()
   const sessions = useTerminalStore((s) => s.sessions)
+  const [taskOpen, setTaskOpen] = useState(false)
 
-  const agent = agents.find((a) => a.id === selectedAgentId) ?? null
+  // `fired` ajanlar Inspector'da da görünmez (WP-08).
+  const agent = selectVisibleAgents(agents).find((a) => a.id === selectedAgentId) ?? null
   const session = agent ? sessions[String(agent.id)] : undefined
 
   if (!agent) {
@@ -65,6 +77,25 @@ export function InspectorPanel() {
             </div>
           ))}
           <Separator className="mt-2" />
+          <div className="flex flex-col gap-2 pt-1">
+            {session?.status !== 'running' ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => setTaskOpen(true)}
+              >
+                <ClipboardListIcon className="size-3.5" />
+                Görev Ver
+              </Button>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Ajan çalışıyor — yeni görev için önce durdurun.
+              </p>
+            )}
+            <FireButton agent={agent} />
+          </div>
+          {agent && <TaskDialog agent={agent} open={taskOpen} onOpenChange={setTaskOpen} />}
           <p className="pt-1 leading-relaxed text-muted-foreground">
             Ajan detayı, izin profili ve bütçe yönetimi Faz 3'te bu panele gelir.
           </p>

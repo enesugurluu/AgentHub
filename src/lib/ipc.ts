@@ -10,10 +10,37 @@ export type AgentSpawnResult = {
   executionId: string
 }
 
+/** Zeka/effort seviyesi (claude `--effort`; docs 6.1 Adım 2). */
+export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
+/**
+ * CLI spawn seçenekleri (Rust `SpawnOptions` ile camelCase birebir eşleşir — WP-02).
+ * `workdir`/`env` boş bırakılırsa backend worktree'yi çözer ve doldurur.
+ */
+export type SpawnOptions = {
+  workdir?: string
+  env?: [string, string][]
+  args?: string[]
+  model?: string | null
+  effort?: Effort | null
+  maxBudgetUsd?: number | null
+  maxTurns?: number | null
+  nonInteractive?: boolean
+  taskFile?: string | null
+}
+
 export type EngineMetadata = {
   engineType: string
   version: string | null
   capabilities: string[]
+}
+
+/** Adaptör detect bilgisi (kurulu mu + sürüm + capability + kurulum ipucu). */
+export type DetectResult = {
+  detected: boolean
+  version: string | null
+  capabilities: string[]
+  installHint: string | null
 }
 
 export type AgentRecord = {
@@ -25,6 +52,45 @@ export type AgentRecord = {
   status: string
   worktreePath: string | null
   createdAt: string | null
+  avatarColor: string | null
+  configJson: string | null
+  hiredAt: string | null
+  firedAt: string | null
+}
+
+export type PermissionProfile = 'full' | 'standard' | 'limited' | 'custom'
+
+/** İşe alım payload'ı (docs 6.1 Adım 2/3) — Rust `HirePayload` ile camelCase eşleşir. */
+export type HirePayload = {
+  name: string
+  role: string
+  motor: string
+  model?: string | null
+  effort?: string | null
+  maxBudgetUsd?: number | null
+  maxTurns?: number | null
+  permissionsProfile: PermissionProfile
+  systemPrompt?: string | null
+  avatarColor?: string | null
+  skills: string[]
+  mcpServers: string[]
+}
+
+/** İşten çıkarma seçenekleri (docs 6.2). Worktree davranışı WP-05'te bağlanır. */
+export type FireOptions = {
+  worktreeAction: 'delete' | 'keep' | 'commit_and_keep'
+  moveOpenTasksToBacklog: boolean
+  keepLogs: boolean
+}
+
+/** Kısmi güncelleme (None = alana dokunma). */
+export type AgentPatch = {
+  name?: string | null
+  role?: string | null
+  motor?: string | null
+  model?: string | null
+  status?: string | null
+  avatarColor?: string | null
 }
 
 export type WorktreeInfo = {
@@ -40,6 +106,12 @@ export type BranchStrategy =
   | { type: 'existingBranch'; name: string }
   | { type: 'newBranchFrom'; baseBranch: string; name: string }
 
+/** Worktree silme seçenekleri (docs 6.2; WP-05): delete | keep | commit_and_keep. */
+export type WorktreeRemoveOptions = {
+  action: 'delete' | 'keep' | 'commit_and_keep'
+  force?: boolean
+}
+
 /**
  * PTY olayları: Rust tarafında serde tag'i ile `type: "output" | "exit"` olarak
  * serialize edilir. Çıktı ham bayt olarak gelir (UTF-8 çok baytlı karakterlerin
@@ -48,6 +120,7 @@ export type BranchStrategy =
 export type PtyEvent = {
   agentId: string
   executionId: string
+  taskId: number | null
   kind: PtyEventKind
 }
 
@@ -55,6 +128,14 @@ export type PtyEventKind =
   | { type: 'output'; data: number[] }
   // portable-pty 0.9: ExitStatus::exit_code() her zaman u32 döner (Option değil).
   | { type: 'exit'; code: number }
+  // Parser sinyali (WP-04): progress / approval_requested / task_completed / task_failed
+  | { type: 'signal'; signal: OutputSignal }
+
+export type OutputSignal =
+  | { type: 'progress'; turn: number; cost: number; tokensIn: number; tokensOut: number }
+  | { type: 'approvalRequested'; pattern: string }
+  | { type: 'taskCompleted'; summary: string }
+  | { type: 'taskFailed'; reason: string }
 
 /** Frontend tarafında oluşturulup invoke argümanı olarak backend'e verilir. */
 export function createPtyChannel(onEvent: (event: PtyEvent) => void): Channel<PtyEvent> {
@@ -91,15 +172,42 @@ export function agentSpawn(args: {
 export function agentSpawnEngine(args: {
   agentId: string
   engineType: string
+  options?: SpawnOptions
   cols: number
   rows: number
   channel: Channel<PtyEvent>
 }): Promise<AgentSpawnResult> {
-  return invoke<AgentSpawnResult>('agent_spawn_engine', args)
+  return invoke<AgentSpawnResult>('agent_spawn_engine', {
+    agentId: args.agentId,
+    engineType: args.engineType,
+    options: args.options ?? {},
+    cols: args.cols,
+    rows: args.rows,
+    channel: args.channel,
+  })
 }
 
 export function agentStop(args: { agentId: string; executionId: string }): Promise<void> {
   return invoke('agent_stop', args)
+}
+
+/**
+ * Motor kurulumu (docs 7.5) — komut backend'de adaptörün `install_command()`'undan
+ * çözülür; frontend asla program/args göndermez (FAZ0 S5). Oturum
+ * `install-<engineType>` agentId'siyle terminal sekmesinde akar (WP-12).
+ */
+export function agentInstallEngine(args: {
+  engineType: string
+  cols: number
+  rows: number
+  channel: Channel<PtyEvent>
+}): Promise<AgentSpawnResult> {
+  return invoke<AgentSpawnResult>('agent_install_engine', {
+    engineType: args.engineType,
+    cols: args.cols,
+    rows: args.rows,
+    channel: args.channel,
+  })
 }
 
 export function agentWrite(args: {
@@ -119,6 +227,18 @@ export function ptyResize(args: {
   return invoke('pty_resize', args)
 }
 
+/**
+ * Terminal buffer'ını oturum JSONL'ına `session_buffer` olarak ekler
+ * (xterm serialize — docs 12.2; WP-11).
+ */
+export function transcriptAppendSessionBuffer(args: {
+  agentId: string
+  executionId: string
+  text: string
+}): Promise<void> {
+  return invoke('transcript_append_session_buffer', args)
+}
+
 export function ptyListEngineAdapters(query?: string): Promise<string[]> {
   return invoke<string[]>('pty_list_engine_adapters', { query: query ?? 'all' })
 }
@@ -132,8 +252,101 @@ export function ptyAdapterMetadata(id: string): Promise<EngineMetadata> {
   return invoke<EngineMetadata>('pty_adapter_metadata', { id })
 }
 
+/** Tek adaptörün detect bilgisi (kurulu mu + install_hint) — WP-07/12. */
+export function ptyAdapterDetectInfo(id: string): Promise<DetectResult> {
+  return invoke<DetectResult>('pty_adapter_detect_info', { id })
+}
+
 export function listAgents(): Promise<AgentRecord[]> {
   return invoke<AgentRecord[]>('agent_list_all')
+}
+
+/** Yeni ajan kaydı (Hire Wizard — WP-07). */
+export function agentHire(payload: HirePayload): Promise<AgentRecord> {
+  return invoke<AgentRecord>('agent_hire', { payload })
+}
+
+/** Ajanı işten çıkar (Fire onay akışı — WP-08). */
+export function agentFire(id: number, options: FireOptions): Promise<AgentRecord> {
+  return invoke<AgentRecord>('agent_fire', { id, options })
+}
+
+/** Kalıcı silme — yalnızca `fired` kayıtlar. */
+export function agentDelete(id: number): Promise<void> {
+  return invoke('agent_delete', { id })
+}
+
+/** Kısmi güncelleme. */
+export function agentUpdate(id: number, patch: AgentPatch): Promise<AgentRecord> {
+  return invoke<AgentRecord>('agent_update', { id, patch })
+}
+
+/** Tek ajan kaydı. */
+export function agentGet(id: number): Promise<AgentRecord> {
+  return invoke<AgentRecord>('agent_get', { id })
+}
+
+/** settings tablosu (repo_path, main_branch, ... — WP-06). */
+export function settingsGet(key: string): Promise<string | null> {
+  return invoke<string | null>('settings_get', { key })
+}
+
+export function settingsSet(key: string, value: string): Promise<void> {
+  return invoke('settings_set', { key, value })
+}
+
+/**
+ * Repo yolu seçimi (WP-06): canonicalize + `.git` doğrulaması + worktree kökü
+ * reddi; başarılıysa `settings.repo_path`'e yazılır ve canonical yol döner.
+ */
+export function repoSelect(path: string): Promise<string> {
+  return invoke<string>('repo_select', { path })
+}
+
+/** Görev kaydı (docs 8.2 alt kümesi — kanban UI M2'de; WP-10 "Görev Ver"). */
+export type TaskRecord = {
+  id: number
+  title: string
+  description: string | null
+  acceptanceCriteria: string | null
+  column: string
+  assignedAgentId: number | null
+  priority: number
+  budget: number | null
+  spentCost: number
+  worktreePath: string | null
+  createdAt: string | null
+  startedAt: string | null
+  completedAt: string | null
+}
+
+export function taskCreate(args: {
+  title: string
+  description?: string | null
+  acceptanceCriteria?: string | null
+  priority?: number
+  budget?: number | null
+}): Promise<TaskRecord> {
+  return invoke<TaskRecord>('task_create', args)
+}
+
+export function taskGet(id: number): Promise<TaskRecord> {
+  return invoke<TaskRecord>('task_get', { id })
+}
+
+export function taskList(agentId?: number | null): Promise<TaskRecord[]> {
+  return invoke<TaskRecord[]>('task_list', { agentId: agentId ?? null })
+}
+
+/** Görevi ajana ata + spawn et (docs 13.1; WP-10). */
+export function taskAssign(args: {
+  agentId: number
+  taskId: number
+  cols: number
+  rows: number
+  channel: Channel<PtyEvent>
+}): Promise<AgentSpawnResult> {
+  return invoke<AgentSpawnResult>('task_assign', args)
 }
 
 export function worktreeCreate(args: {
@@ -149,6 +362,14 @@ export function worktreeList(repoPath: string): Promise<WorktreeInfo[]> {
   return invoke<WorktreeInfo[]>('worktree_list', { repoPath })
 }
 
-export function worktreeRemove(worktreePath: string, force?: boolean): Promise<void> {
-  return invoke('worktree_remove', { worktreePath, force })
+export function worktreeRemove(
+  worktreePath: string,
+  options?: WorktreeRemoveOptions,
+): Promise<void> {
+  return invoke('worktree_remove', { worktreePath, options })
+}
+
+/** Ajanın yönetilen worktree'si (spawn öncesi UI bilgisi; WP-07 masa ataması). */
+export function worktreeForAgent(repoPath: string, agentId: string): Promise<WorktreeInfo> {
+  return invoke<WorktreeInfo>('worktree_for_agent', { repoPath, agentId })
 }

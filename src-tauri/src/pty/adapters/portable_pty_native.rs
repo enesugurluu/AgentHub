@@ -34,6 +34,7 @@ impl EngineAdapter for PortablePtyAdapter {
       detected: self.detect(),
       version: self.metadata().version,
       capabilities: self.metadata().capabilities,
+      install_hint: None,
     }
   }
 

@@ -9,6 +9,7 @@
 pub mod agents;
 pub mod db;
 pub mod pty;
+pub mod tasks;
 pub mod worktree;
 
 use tauri::Manager;
@@ -42,17 +43,34 @@ pub fn run() {
       pty::agent_spawn_engine,
       pty::agent_write,
       pty::agent_stop,
+      pty::agent_install_engine,
+      pty::transcript_append_session_buffer,
       pty::pty_resize,
       pty::pty_list_engine_adapters,
       pty::pty_list_all_ids,
       pty::pty_adapter_metadata,
+      pty::pty_adapter_detect_info,
       pty::pty_unregister_engine_adapter,
       pty::pty_find_by_engine_type,
       pty::pty_find_by_version,
+      db::agent_hire,
+      db::agent_fire,
+      db::agent_delete,
+      db::agent_update,
+      db::agent_get,
       db::agent_list_all,
+      db::settings_get,
+      db::settings_set,
+      db::repo_select,
+      db::task_create,
+      db::task_get,
+      db::task_list,
+      db::task_finalize,
+      pty::task_assign,
       worktree::worktree_create,
       worktree::worktree_remove,
-      worktree::worktree_list
+      worktree::worktree_list,
+      worktree::worktree_for_agent
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

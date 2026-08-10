@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import { SearchAddon } from 'xterm-addon-search'
+import { SerializeAddon } from 'xterm-addon-serialize'
 import { WebLinksAddon } from 'xterm-addon-web-links'
 import { WebglAddon } from 'xterm-addon-webgl'
 import 'xterm/css/xterm.css'
@@ -10,6 +11,7 @@ import 'xterm/css/xterm.css'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
+  agentInstallEngine,
   agentSpawn,
   agentSpawnEngine,
   agentStop,
@@ -18,6 +20,7 @@ import {
   isTauriRuntime,
   type PtyEvent,
   ptyResize,
+  transcriptAppendSessionBuffer,
 } from '@/lib/ipc'
 import { useTerminalStore } from '@/store/terminal'
 
@@ -99,12 +102,27 @@ export function PtyTerminal({
     const searchAddon = new SearchAddon()
     terminal.loadAddon(searchAddon)
     searchAddonRef.current = searchAddon
+    // JSONL session_buffer kaydı için (docs 12.2; WP-11 — FAZ0 serialize ertelemesi).
+    const serializeAddon = new SerializeAddon()
+    terminal.loadAddon(serializeAddon)
 
     terminalRef.current = terminal
 
     if (containerRef.current) {
       terminal.open(containerRef.current)
       requestAnimationFrame(() => fitAddon.fit())
+    }
+
+    // WP-11: önceki oturumun serialize edilmiş buffer'ı varsa geri yükle
+    // (yalnızca bu sekmede henüz canlı çıktı yokken — çift yazma önlenir).
+    const savedBuffer = useTerminalStore.getState().buffers[agentId]
+    const sessionState = useTerminalStore.getState().sessions[agentId]
+    if (savedBuffer && (!sessionState || sessionState.outputBytes === 0)) {
+      try {
+        terminal.write(savedBuffer)
+      } catch {
+        // geri yükleme başarısızsa yoksay
+      }
     }
 
     // PTY kanalı: backend her olayı sadece bu oturuma gönderir.
@@ -117,13 +135,34 @@ export function PtyTerminal({
         const bytes = new Uint8Array(event.kind.data)
         terminal.write(bytes)
         useTerminalStore.getState().bumpOutput(event.agentId, bytes.length)
+      } else if (event.kind.type === 'signal') {
+        // WP-04/13: Progress sinyali → cost birikimi (TopBar CostMeter).
+        if (event.kind.signal.type === 'progress') {
+          useTerminalStore.getState().addCost(event.agentId, event.kind.signal.cost)
+        }
       } else if (event.kind.type === 'exit') {
         useTerminalStore.getState().markExited(event.agentId)
+        // JSONL session_buffer kaydı + in-memory geri yükleme (docs 12.2; WP-11).
+        try {
+          const buffer = serializeAddon.serialize()
+          useTerminalStore.getState().setBuffer(event.agentId, buffer)
+          void transcriptAppendSessionBuffer({
+            agentId: event.agentId,
+            executionId: event.executionId,
+            text: buffer,
+          }).catch(() => {
+            // transcript yoksa sessiz geç
+          })
+        } catch {
+          // serialize desteklenmiyorsa sessiz geç
+        }
         terminal.writeln('')
         terminal.writeln(`\x1b[90m[agent ${event.agentId} exited] (code ${event.kind.code})\x1b[0m`)
       }
     })
     channelRef.current = channel
+    // task_assign (WP-10) bu kanalı kullanır (backend çıktısı terminale akar).
+    useTerminalStore.getState().registerChannel(agentId, channel)
 
     // Klavye: Ctrl/Cmd+Shift+F arama aç/kapa
     const onKeyDown = (e: KeyboardEvent) => {
@@ -259,8 +298,16 @@ export function PtyTerminal({
       const channel = channelRef.current
       if (!channel) throw new Error('pty channel not initialized')
 
-      const result =
-        engineRef.current === 'claude'
+      // Kurulum oturumları (WP-12): `install-<engine>` → agentInstallEngine
+      // (komut backend'de adaptörden çözülür; frontend program göndermez — S5).
+      const result = agentId.startsWith('install-')
+        ? await agentInstallEngine({
+            engineType: agentId.slice('install-'.length),
+            cols,
+            rows,
+            channel,
+          })
+        : engineRef.current === 'claude'
           ? await agentSpawnEngine({
               agentId,
               engineType: 'claude',
@@ -300,6 +347,21 @@ export function PtyTerminal({
       console.error('Failed to stop agent:', e)
     }
   }
+
+  // WP-12: SettingsDialog "Kur" → `install-<engine>` oturumu 'starting' açılır;
+  // sekme mount olunca otomatik başlat (kullanıcının Start'a basması gerekmez).
+  // startShell her render'da yeniden oluşur → en günceli ref'te tut, tek sefer tetikle.
+  const startShellRef = useRef<() => Promise<void>>(async () => {})
+  startShellRef.current = startShell
+  const autoStartFired = useRef(false)
+  const sessionStatus = session?.status
+  const isInstallSession = agentId.startsWith('install-')
+  useEffect(() => {
+    if (isInstallSession && sessionStatus === 'starting' && !autoStartFired.current) {
+      autoStartFired.current = true
+      void startShellRef.current()
+    }
+  }, [isInstallSession, sessionStatus])
 
   const running = session?.status === 'running' || session?.status === 'starting'
 

@@ -24,6 +24,9 @@ pub struct DetectResult {
     pub detected: bool,
     pub version: Option<String>,
     pub capabilities: Vec<String>,
+    /// Kurulum komutu ipucu (docs 7.5) — UI'da "Kur" butonu bunu gösterir (WP-03/12).
+    #[serde(default)]
+    pub install_hint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -44,18 +47,55 @@ pub struct HealthReport {
     pub operational_status: String,
 }
 
+/// Zeka/effort seviyesi (docs 6.1 Adım 2; `--effort` flag'i).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Effort {
+  Low,
+  Medium,
+  High,
+  XHigh,
+  Max,
+}
+
+impl Effort {
+  pub fn as_str(&self) -> &'static str {
+    match self {
+      Self::Low => "low",
+      Self::Medium => "medium",
+      Self::High => "high",
+      Self::XHigh => "xhigh",
+      Self::Max => "max",
+    }
+  }
+}
+
 /// CLI ajanlarını (`claude`, `codex`, ...) spawn ederken adaptöre verilen seçenekler.
 ///
 /// Komut yapısı (program, flag'ler) adaptörün kendi sorumluluğundadır — her CLI'nin
-/// kurulum/fleg eşleşmesi farklıdır (AjanOfis docs Bölüm 7.2).
-#[derive(Debug, Clone)]
-pub struct CliSpawnOptions {
-  /// Ajanın çalışacağı dizin (worktree yolu).
+/// kurulum/flag eşleşmesi farklıdır (AjanOfis docs Bölüm 7.1/7.2). Desteklenmeyen
+/// alanlar adaptörün capability listesine göre yok sayılır (WP-13).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SpawnOptions {
+  /// Ajanın çalışacağı dizin (worktree yolu). Boşsa backend doldurur (pty/mod.rs).
   pub workdir: PathBuf,
   /// Sürece enjekte edilecek ortam değişkenleri.
   pub env: Vec<(String, String)>,
   /// Ek argümanlar (ör. `-p`, `--model`, `--max-budget-usd`).
   pub args: Vec<String>,
+  /// Model seçimi (motor destekliyorsa; ör. "sonnet").
+  pub model: Option<String>,
+  /// Zeka seviyesi (claude `--effort`).
+  pub effort: Option<Effort>,
+  /// Görev bütçesi (USD; claude `--max-budget-usd`).
+  pub max_budget_usd: Option<f64>,
+  /// Maksimum tur (claude `--max-turns`).
+  pub max_turns: Option<u32>,
+  /// Interaktif olmayan mod (`claude -p` / `codex exec` / `aider --message`).
+  pub non_interactive: bool,
+  /// Görev tanımı dosyası (AGENT_TASK.md — WP-10). İçeriği prompt olarak iletilir.
+  pub task_file: Option<PathBuf>,
 }
 
 /// Pluggable backend for creating and managing PTY-backed engine processes.
@@ -71,6 +111,16 @@ pub trait EngineAdapter: Send + Sync + 'static {
       EngineMetadata::default()
   }
 
+  /// Capability kontrolü (WP-13): adaptör `feature`'ı (budget/turns/effort/print/...)
+  /// destekliyor mu? Desteklenmeyen `SpawnOptions` alanları sessizce yok sayılır
+  /// ama `tracing::warn!` ile görünür kılınır.
+  fn supports(&self, feature: &str) -> bool {
+      self.metadata()
+          .capabilities
+          .iter()
+          .any(|c| c == feature)
+  }
+
   /// Returns true if this adapter can run on the current host (OS, availability of
   /// underlying PTY APIs, etc).
   fn detect(&self) -> bool;
@@ -81,7 +131,14 @@ pub trait EngineAdapter: Send + Sync + 'static {
           detected: self.detect(),
           version: self.metadata().version,
           capabilities: self.metadata().capabilities,
+          install_hint: None,
       }
+  }
+
+  /// Kurulum komutu (docs 7.5) — `agent_install_engine` bunu backend'de çözer;
+  /// frontend asla program/args göndermez (FAZ0 S5). Default: tanımlı değil.
+  fn install_command(&self) -> Option<Vec<String>> {
+      None
   }
 
   /// Performs a cheap health check (configuration / dependencies) and returns an
@@ -100,13 +157,18 @@ pub trait EngineAdapter: Send + Sync + 'static {
       }
   }
 
-  fn spawn(&self, cmd: CommandBuilder, cols: u16, rows: u16) -> Result<SpawnedPty, String>;
+  /// Genel PTY spawn'ı. Varsayılan: ortak izolasyonlu yardımcı
+  /// (`spawn_pty_isolated` — Job Object / process group). CLI adaptörleri genelde
+  /// yalnızca `spawn_cli` implement eder; bu default yeterlidir.
+  fn spawn(&self, cmd: CommandBuilder, cols: u16, rows: u16) -> Result<SpawnedPty, String> {
+    spawn_pty_isolated(cmd, cols, rows)
+  }
 
   /// CLI ajanlarını (claude, codex, ...) kendi komut kurallarıyla spawn eder.
   /// Varsayılan: desteklenmiyor — sadece CLI adaptörleri override eder.
   fn spawn_cli(
     &self,
-    _opts: CliSpawnOptions,
+    _opts: SpawnOptions,
     _cols: u16,
     _rows: u16,
   ) -> Result<SpawnedPty, String> {
@@ -180,6 +242,11 @@ pub(crate) fn stop_child_tree(
 /// Ortak PTY spawn yardımcısı: `portable-pty` ile süreç açar ve Windows'ta
 /// Job Objects (KILL_ON_JOB_CLOSE) ile child ağacını izole eder.
 /// Tüm adaptörler bu fonksiyonu kullanır (izolasyon tek noktada).
+///
+/// NOT (2026-08-10): Windows bloğu (`mem::zeroed`, pointer cast'ler, `as _`)
+/// clippy-1.97 Windows hedefinde lint üretebiliyor; platform-özel FFI kodu
+/// olduğu için kapsam fonksiyon bazında daraltıldı (FAZ0'dan beri aynı kod).
+#[allow(clippy::all)]
 pub(crate) fn spawn_pty_isolated(
   cmd: CommandBuilder,
   cols: u16,

@@ -1,10 +1,12 @@
 import { BotIcon, PlusIcon } from 'lucide-react'
+import { useState } from 'react'
 
+import { HireWizard } from '@/components/Settings/HireWizard'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
-import { useAgentStore } from '@/store/agents'
+import { selectVisibleAgents, useAgentStore } from '@/store/agents'
 import { useTerminalStore } from '@/store/terminal'
 
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'secondary' | 'destructive'> = {
@@ -20,6 +22,10 @@ export function AgentSidebar() {
   const { agents, selectedAgentId, selectAgent, loading } = useAgentStore()
   const sessions = useTerminalStore((s) => s.sessions)
   const setActive = useTerminalStore((s) => s.setActive)
+  const [hireOpen, setHireOpen] = useState(false)
+
+  // `fired` ajanlar listede görünmez (docs 6.2; WP-08).
+  const visibleAgents = selectVisibleAgents(agents)
 
   return (
     <aside className="flex h-full min-h-0 flex-col border-r border-border">
@@ -27,7 +33,13 @@ export function AgentSidebar() {
         <h2 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           Ajanlar
         </h2>
-        <Button variant="ghost" size="icon" className="size-6" title="İşe al (Faz 2)">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6"
+          title="İşe al (Hire Wizard)"
+          onClick={() => setHireOpen(true)}
+        >
           <PlusIcon className="size-3.5" />
         </Button>
       </div>
@@ -36,14 +48,21 @@ export function AgentSidebar() {
         <div className="flex flex-col gap-1 px-2 pb-2">
           {loading && agents.length === 0 ? (
             <p className="px-2 py-1 text-xs text-muted-foreground">Yükleniyor…</p>
-          ) : agents.length === 0 ? (
+          ) : visibleAgents.length === 0 ? (
             <div className="px-2 py-1">
               <p className="text-xs text-muted-foreground">
-                Kayıtlı ajan yok. Veritabanı seed verisiyle gelir.
+                Kayıtlı ajan yok.{' '}
+                <button
+                  type="button"
+                  className="text-primary underline-offset-2 hover:underline"
+                  onClick={() => setHireOpen(true)}
+                >
+                  İlk ajanı işe al
+                </button>
               </p>
             </div>
           ) : (
-            agents.map((agent) => {
+            visibleAgents.map((agent) => {
               const session = sessions[String(agent.id)]
               const selected = selectedAgentId === agent.id
               return (
@@ -83,6 +102,8 @@ export function AgentSidebar() {
           )}
         </div>
       </ScrollArea>
+
+      <HireWizard open={hireOpen} onOpenChange={setHireOpen} />
     </aside>
   )
 }
