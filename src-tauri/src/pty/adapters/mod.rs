@@ -9,7 +9,9 @@ mod portable_pty_native;
 
 pub use portable_pty_native::PortablePtyAdapter;
 
+// IPC üzerinden frontend'e giden struct'larda camelCase zorunlu (TS tipleriyle birebir eşleşme).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct EngineMetadata {
     pub engine_type: String,
     pub version: Option<String>,
@@ -17,6 +19,7 @@ pub struct EngineMetadata {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct DetectResult {
     pub detected: bool,
     pub version: Option<String>,
@@ -24,6 +27,7 @@ pub struct DetectResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceUtil {
     pub cpu_percent: Option<f32>,
     pub memory_bytes: Option<u64>,
@@ -31,6 +35,7 @@ pub struct ResourceUtil {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct HealthReport {
     pub ok: bool,
     pub message: Option<String>,

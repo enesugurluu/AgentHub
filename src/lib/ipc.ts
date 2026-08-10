@@ -53,7 +53,8 @@ export type PtyEvent = {
 
 export type PtyEventKind =
   | { type: 'output'; data: number[] }
-  | { type: 'exit'; code: number | null }
+  // portable-pty 0.9: ExitStatus::exit_code() her zaman u32 döner (Option değil).
+  | { type: 'exit'; code: number }
 
 /** Frontend tarafında oluşturulup invoke argümanı olarak backend'e verilir. */
 export function createPtyChannel(onEvent: (event: PtyEvent) => void): Channel<PtyEvent> {

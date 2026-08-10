@@ -18,7 +18,12 @@ use crate::db::AppDb;
 use crate::pty::registry::PtyManager;
 
 /// Frontend'e giden PTY olayı (serde tag'i: `kind.type = "output" | "exit"`).
+///
+/// NOT: Channel payload'ları serde ile birebir serialize edilir; Tauri alan
+/// adlarını dönüştürmez. Frontend `agentId`/`executionId` beklediği için
+/// camelCase rename zorunlu — aksi halde tüm olaylar sessizce düşer.
 #[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct PtyEvent {
   pub agent_id: String,
   pub execution_id: String,

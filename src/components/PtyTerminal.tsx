@@ -118,9 +118,7 @@ export function PtyTerminal({
       } else if (event.kind.type === 'exit') {
         useTerminalStore.getState().markExited(event.agentId)
         terminal.writeln('')
-        terminal.writeln(
-          `\x1b[90m[agent ${event.agentId} exited]${event.kind.code !== null ? ` (code ${event.kind.code})` : ''}\x1b[0m`,
-        )
+        terminal.writeln(`\x1b[90m[agent ${event.agentId} exited] (code ${event.kind.code})\x1b[0m`)
       }
     })
     channelRef.current = channel
