@@ -107,7 +107,9 @@ pub(crate) fn build_opencode_command(opts: &SpawnOptions) -> Result<(String, Vec
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::agents::test_util::{base_opts, with_fake_binary};
+  #[cfg(unix)]
+use crate::agents::test_util::with_fake_binary;
+use crate::agents::test_util::base_opts;
   use std::path::PathBuf;
 
   #[test]

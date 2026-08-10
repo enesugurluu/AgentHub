@@ -85,6 +85,8 @@ pub(crate) mod test_util {
   /// Mock matrisi yalnızca Unix'te gerçektir; Windows'ta no-op (Windows'ta gerçek
   /// CLI varlığı elle doğrulanır). Fonksiyon her platformda derlensin diye cfg
   /// gövde içindedir.
+  // Windows'ta yalnızca no-op dalı derlenir; çağrı yok → dead_code uyarısı önlenir.
+  #[allow(dead_code)]
   pub(crate) fn with_fake_binary(name: &str, script: &str, test: impl FnOnce()) {
     #[cfg(unix)]
     {
@@ -103,8 +105,9 @@ pub(crate) mod test_util {
     }
     #[cfg(not(unix))]
     {
-      let _ = (name, script);
       // Mock matrisi yalnızca Unix; Windows'ta no-op.
+      // `let _ = (name, script)` clippy::let_underscore_untyped üretir → drop() kullan.
+      drop((name, script));
     }
   }
 
