@@ -119,6 +119,7 @@ pub fn pump_loop(
 /// `parser` motor/moda göre `select_parser` ile seçilir (WP-04); son
 /// TaskCompleted/Failed sinyali oturumda saklanır (WP-10 finalize).
 /// `transcript_path` doluysa output/progress/exit satırları JSONL'a yazılır (WP-11).
+#[allow(clippy::too_many_arguments)] // oturum bağlamı: app + 4 kimlik + kanal + parser + transcript + task
 pub fn start_output_pump(
   app: AppHandle,
   agent_id: String,
@@ -186,10 +187,9 @@ pub fn start_output_pump(
             }
           }
         }
-        if channel.send(event).is_err() {
-          // Frontend kanalı kapandıysa (pencere/sekme kapatıldı) dur.
-          return;
-        }
+        // Frontend kanalı kapandıysa pompayı bitir — closure'ın son ifadesi olduğu
+        // için açık `return;` gerekmez (clippy::needless_return).
+        let _ = channel.send(event);
       });
 
       // WP-10 tamamlanma algılaması: son TaskCompleted/Failed sinyalini oturuma yaz.

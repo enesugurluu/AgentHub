@@ -58,18 +58,10 @@ impl LineBuffer {
 }
 
 /// Claude Code `--output-format stream-json` satırlarını parse eder.
+#[derive(Default)]
 pub struct ClaudeStreamJsonParser {
   buffer: LineBuffer,
   turn: u32,
-}
-
-impl Default for ClaudeStreamJsonParser {
-  fn default() -> Self {
-    Self {
-      buffer: LineBuffer::default(),
-      turn: 0,
-    }
-  }
 }
 
 impl OutputParser for ClaudeStreamJsonParser {
@@ -135,16 +127,9 @@ impl OutputParser for ClaudeStreamJsonParser {
 }
 
 /// OpenCode JSONL event'lerini parse eder.
+#[derive(Default)]
 pub struct OpencodeJsonlParser {
   buffer: LineBuffer,
-}
-
-impl Default for OpencodeJsonlParser {
-  fn default() -> Self {
-    Self {
-      buffer: LineBuffer::default(),
-    }
-  }
 }
 
 impl OutputParser for OpencodeJsonlParser {
@@ -190,18 +175,10 @@ impl OutputParser for OpencodeJsonlParser {
 }
 
 /// Genel regex eşleşmeleri (docs 7.3): ilerleme `[n/N]`, `Tokens:`, onay kalıpları.
+#[derive(Default)]
 pub struct RegexProgressParser {
   buffer: LineBuffer,
   last_turn: u32,
-}
-
-impl Default for RegexProgressParser {
-  fn default() -> Self {
-    Self {
-      buffer: LineBuffer::default(),
-      last_turn: 0,
-    }
-  }
 }
 
 impl OutputParser for RegexProgressParser {

@@ -560,7 +560,7 @@ mod tests {
         assert!(wt_path.exists());
         assert!(!wt_path.join(".agenthub.json").exists());
         let branch = String::from_utf8_lossy(
-            &Command::new("git").current_dir(&wt_path).args(["branch", "--show-current"]).output().unwrap().stdout,
+            &Command::new("git").current_dir(wt_path).args(["branch", "--show-current"]).output().unwrap().stdout,
         ).trim().to_string();
         assert!(branch.starts_with("agent/"), "branch korunmalıydı: {branch}");
     }
@@ -584,7 +584,7 @@ mod tests {
         assert!(!wt_path.join(".agenthub.json").exists());
         // Değişiklik commit'lenmiş olmalı (çalışma ağacı temiz).
         let status = String::from_utf8_lossy(
-            &Command::new("git").current_dir(&wt_path).args(["status", "--porcelain"]).output().unwrap().stdout,
+            &Command::new("git").current_dir(wt_path).args(["status", "--porcelain"]).output().unwrap().stdout,
         ).trim().to_string();
         assert!(status.is_empty(), "commit sonrası çalışma ağacı temiz olmalı: {status}");
     }
