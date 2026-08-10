@@ -1,0 +1,131 @@
+# AgentHub CI — FAZ0 doğrulama kapısı (docs: FAZ0-DURUM-ANALIZI-VE-UYGULAMA-PLANI.md §6.1/12)
+#
+# İki paralel iş + bir toplayıcı kapı:
+#   1. frontend → biome (lint/format) + tsc -b + vite production build
+#   2. rust     → cargo check + clippy (-D warnings) + cargo test,
+#                 ubuntu / windows / macOS matrisi (Windows Job Objects ve Unix
+#                 PTY yollarının ikisi de gerçek koşucularda derlenir/test edilir)
+#   3. ci-gate  → tek "required status check" olarak branch protection'a bağlanır
+#
+# Not: `cargo fmt --check` bilinçli olarak zorunlu değil — mevcut kod tabanında
+# 2/4 boşluk karışık girinti var; rustfmt zorlaması ayrı bir format commit'i ile
+# yapılmalı.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  HUSKY: "0" # CI ortamında git hook kurulumunu atla
+
+jobs:
+  frontend:
+    name: Frontend (biome + tsc + vite build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # pnpm, setup-node'dan ÖNCE kurulur (cache: pnpm PATH'te pnpm ister).
+      # Sürüm package.json'daki "packageManager" alanından okunur (pnpm@9.15.9).
+      - name: pnpm kur
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Node.js kur
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Bağımlılıklar (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Biome (lint + format gate)
+        run: pnpm lint
+
+      - name: TypeScript (tsc -b)
+        run: pnpm typecheck
+
+      - name: Vite production build
+        run: pnpm build
+
+  rust:
+    name: Rust ${{ matrix.os }} (check + clippy + test)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false # bir OS patlarsa diğerleri raporlamaya devam etsin
+      matrix:
+        # Windows: ConPTY + Job Objects kod yolu; macOS/Linux: POSIX PTY yolu.
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Tauri sistem bağımlılıkları (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Rust toolchain (stable + clippy)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cargo bağımlılık cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # --locked: Cargo.lock'a sadakat zorunlu (sürüklenme CI'da patlar).
+      - name: cargo check
+        working-directory: src-tauri
+        run: cargo check --locked --all-targets
+
+      - name: cargo clippy (warnings = hata)
+        working-directory: src-tauri
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      # Adaptör spawn / registry / worktree unit testleri gerçek PTY + git
+      # kullanır; üç platformda da çalışacak şekilde yazılmışlardır.
+      - name: cargo test
+        working-directory: src-tauri
+        run: cargo test --locked
+
+  ci-gate:
+    name: CI Gate
+    if: always() # bağımlılıklar başarısız olsa bile çalışıp KIRMIZI verir
+    needs: [frontend, rust]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Sonuçları topla
+        run: |
+          echo "frontend: ${{ needs.frontend.result }}"
+          echo "rust:     ${{ needs.rust.result }}"
+          if [ "${{ needs.frontend.result }}" != "success" ] || \
+             [ "${{ needs.rust.result }}" != "success" ]; then
+            echo "::error::CI gate başarısız — yukarıdaki iş sonuçlarına bak"
+            exit 1
+          fi
+          echo "Tüm CI kontrolleri yeşil."

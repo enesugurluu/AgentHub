@@ -42,8 +42,6 @@ export function TerminalTabs() {
       ? activeSessionAgentId
       : (tabs.keys().next().value as string)
 
-  const session = sessions[activeId]
-
   return (
     <footer className="flex h-64 shrink-0 flex-col border-t border-border">
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border px-2">
@@ -72,11 +70,23 @@ export function TerminalTabs() {
         ))}
       </div>
       <div className="min-h-0 flex-1 p-2">
-        <PtyTerminal
-          key={`${activeId}:${session?.executionId ?? 'fresh'}`}
-          agentId={activeId}
-          engine={session?.engineType === 'claude' ? 'claude' : 'pty'}
-        />
+        {/* Her sekmenin terminali mount'lu kalır: key yalnızca ajan id'sidir.
+            Böylece (a) spawn sonrası executionId set edilince remount olmaz
+            (backend'e verilen Channel dispose edilmiş terminale bağlı kalmaz)
+            ve (b) sekme değişince çıktı/scrollback kaybolmaz. Gizli sekmeler
+            display:none ile tutulur; xterm arka planda yazmaya devam eder. */}
+        {[...tabs.keys()].map((tabAgentId) => {
+          const isActive = tabAgentId === activeId
+          return (
+            <div key={tabAgentId} className={cn('h-full min-h-0', isActive ? 'block' : 'hidden')}>
+              <PtyTerminal
+                agentId={tabAgentId}
+                isActive={isActive}
+                engine={sessions[tabAgentId]?.engineType === 'claude' ? 'claude' : 'pty'}
+              />
+            </div>
+          )
+        })}
       </div>
     </footer>
   )

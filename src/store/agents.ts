@@ -9,8 +9,6 @@ type AgentState = {
   error: string | null
   fetchAgents: () => Promise<void>
   selectAgent: (id: number | null) => void
-  /** DB'de kayıt yoksa "default" iskelet ajana geri düşer. */
-  firstAgentId: () => string
 }
 
 export const useAgentStore = create<AgentState>((set, get) => ({
@@ -33,13 +31,4 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   selectAgent: (id) => set({ selectedAgentId: id }),
-
-  firstAgentId: () => {
-    const { agents, selectedAgentId } = get()
-    if (selectedAgentId !== null && agents.some((a) => a.id === selectedAgentId)) {
-      return String(selectedAgentId)
-    }
-    if (agents.length > 0) return String(agents[0].id)
-    return 'default-agent-id'
-  },
 }))

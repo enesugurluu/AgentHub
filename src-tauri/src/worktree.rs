@@ -42,7 +42,7 @@ fn generate_worktree_name(agent_name: &str) -> String {
     let sanitized = sanitize_agent_name(agent_name);
     let uuid = Uuid::new_v4().to_string();
     let suffix = &uuid[..8];
-    format!("{}-{}", sanitized, suffix)
+    format!("{sanitized}-{suffix}")
 }
 
 fn run_git_command(repo_path: &Path, args: &[&str]) -> Result<String, String> {
@@ -50,7 +50,7 @@ fn run_git_command(repo_path: &Path, args: &[&str]) -> Result<String, String> {
         .current_dir(repo_path)
         .args(args)
         .output()
-        .map_err(|e| format!("Failed to execute git command: {}", e))?;
+        .map_err(|e| format!("Failed to execute git command: {e}"))?;
 
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -75,7 +75,7 @@ pub fn worktree_create(repo_path: String, agent_id: String, agent_name: String, 
         let agenthub_dir = repo_dir.join(".git").join("agenthub-worktrees");
 
         if !agenthub_dir.exists() {
-            fs::create_dir_all(&agenthub_dir).map_err(|e| format!("Failed to create worktree directory: {}", e))?;
+            fs::create_dir_all(&agenthub_dir).map_err(|e| format!("Failed to create worktree directory: {e}"))?;
         }
 
         worktree_path = agenthub_dir.join(&worktree_name);
@@ -98,15 +98,15 @@ pub fn worktree_create(repo_path: String, agent_id: String, agent_name: String, 
             // Check if branch exists locally or on origin
             let check_local = run_git_command(repo_dir, &["rev-parse", "--verify", name]);
             if check_local.is_err() {
-                 let check_origin = run_git_command(repo_dir, &["rev-parse", "--verify", &format!("origin/{}", name)]);
+                 let check_origin = run_git_command(repo_dir, &["rev-parse", "--verify", &format!("origin/{name}")]);
                  if check_origin.is_err() {
-                      return Err(format!("Existing branch '{}' not found locally or on origin.", name));
+                      return Err(format!("Existing branch '{name}' not found locally or on origin."));
                  }
             }
 
             // `git worktree add <path> <branch>` correctly sets up the worktree for an existing branch.
             run_git_command(repo_dir, &["worktree", "add", &worktree_path_str, name])
-                .map_err(|e| format!("Failed to create worktree for existing branch: {}", e))?;
+                .map_err(|e| format!("Failed to create worktree for existing branch: {e}"))?;
             final_branch_name = name.clone();
         },
         BranchStrategy::NewBranchFrom { base_branch, name } => {
@@ -114,16 +114,16 @@ pub fn worktree_create(repo_path: String, agent_id: String, agent_name: String, 
 
             let check_base = run_git_command(repo_dir, &["rev-parse", "--verify", base_branch]);
             if check_base.is_err() {
-                 let origin_base = format!("origin/{}", base_branch);
+                 let origin_base = format!("origin/{base_branch}");
                  let check_origin_base = run_git_command(repo_dir, &["rev-parse", "--verify", &origin_base]);
                  if check_origin_base.is_err() {
-                     return Err(format!("Base branch '{}' not found locally or on origin.", base_branch));
+                     return Err(format!("Base branch '{base_branch}' not found locally or on origin."));
                  }
                  actual_base = origin_base;
             }
 
             run_git_command(repo_dir, &["worktree", "add", "-b", name, &worktree_path_str, &actual_base])
-                .map_err(|e| format!("Failed to create worktree with new branch: {}", e))?;
+                .map_err(|e| format!("Failed to create worktree with new branch: {e}"))?;
             final_branch_name = name.clone();
         }
     }
@@ -154,7 +154,7 @@ pub fn worktree_create(repo_path: String, agent_id: String, agent_name: String, 
 pub fn worktree_remove(worktree_path: String, force: Option<bool>) -> Result<(), String> {
     let wt_path = Path::new(&worktree_path);
     if !wt_path.exists() {
-        return Err(format!("Worktree path does not exist: {}", worktree_path));
+        return Err(format!("Worktree path does not exist: {worktree_path}"));
     }
 
     let metadata_path = wt_path.join(".agenthub.json");
@@ -165,10 +165,10 @@ pub fn worktree_remove(worktree_path: String, force: Option<bool>) -> Result<(),
     let is_force = force.unwrap_or(false);
 
     let metadata_content = fs::read_to_string(&metadata_path)
-        .map_err(|e| format!("Failed to read metadata: {}", e))?;
+        .map_err(|e| format!("Failed to read metadata: {e}"))?;
 
     let info: WorktreeInfo = serde_json::from_str(&metadata_content)
-        .map_err(|e| format!("Failed to parse metadata: {}", e))?;
+        .map_err(|e| format!("Failed to parse metadata: {e}"))?;
 
     let repo_dir = Path::new(&info.parent_repo_path);
 
@@ -190,12 +190,13 @@ pub fn worktree_remove(worktree_path: String, force: Option<bool>) -> Result<(),
     // (though in a real scenario, this might mean the worktree is dirty,
     // so returning an error is correct. The metadata file might be gone, which is less ideal).
     if let Err(e) = result {
+        // Not: let-chain `&& let` edition 2024 gerektirir (proje 2021'de) — iç içe if kalır.
         if !is_force {
-             if let Ok(json) = serde_json::to_string(&info) {
-                  let _ = fs::write(&metadata_path, json);
-             }
+            if let Ok(json) = serde_json::to_string(&info) {
+                let _ = fs::write(&metadata_path, json);
+            }
         }
-        return Err(format!("Failed to remove worktree: {}", e));
+        return Err(format!("Failed to remove worktree: {e}"));
     }
 
     Ok(())
@@ -209,7 +210,7 @@ pub fn worktree_list(repo_path: String) -> Result<Vec<WorktreeInfo>, String> {
     }
 
     let output = run_git_command(repo_dir, &["worktree", "list", "--porcelain"])
-        .map_err(|e| format!("Failed to list worktrees: {}", e))?;
+        .map_err(|e| format!("Failed to list worktrees: {e}"))?;
 
     let mut worktrees = Vec::new();
 
@@ -257,7 +258,7 @@ pub fn resolve_worktree_path_for_agent(repo_path: &str, agent_id: &str) -> Resul
         }
     }
 
-    Err(format!("No valid managed worktree found for agent ID {}", agent_id))
+    Err(format!("No valid managed worktree found for agent ID {agent_id}"))
 }
 
 #[cfg(test)]
@@ -267,7 +268,8 @@ mod tests {
     use tempfile::tempdir;
 
     fn setup_mock_repo() -> (PathBuf, PathBuf) {
-        let dir = tempdir().unwrap().into_path();
+        // tempfile 3.27: `into_path()` deprecated — `keep()` aynı semantikte.
+        let dir = tempdir().unwrap().keep();
         let repo_path = dir.join("main-repo");
         fs::create_dir_all(&repo_path).unwrap();
 

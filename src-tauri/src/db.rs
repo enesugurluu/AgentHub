@@ -121,6 +121,10 @@ impl AppDb {
   }
 
   /// Denetim/olay kaydı (spawn, exit, stopped, ...).
+  ///
+  /// Frontend ajan id'lerini string taşır ("1", "2", ...). Sayısal olmayan bir
+  /// id gelirse FOREIGN KEY ihlali (ve çağıran tarafta sessiz yutulma) yerine
+  /// olay `agent_id = NULL` ile kaydedilir — olay asla düşmez.
   pub fn record_event(
     &self,
     agent_id: Option<&str>,
@@ -132,10 +136,11 @@ impl AppDb {
       .conn
       .lock()
       .map_err(|_| "db lock poisoned".to_string())?;
+    let agent_pk: Option<i64> = agent_id.and_then(|raw| raw.parse::<i64>().ok());
     conn
       .execute(
         "INSERT INTO events (agent_id, task_id, event_type, payload) VALUES (?1, ?2, ?3, ?4)",
-        params![agent_id, task_id, event_type, payload],
+        params![agent_pk, task_id, event_type, payload],
       )
       .map_err(|e| e.to_string())?;
     Ok(())

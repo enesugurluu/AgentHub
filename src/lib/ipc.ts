@@ -53,7 +53,8 @@ export type PtyEvent = {
 
 export type PtyEventKind =
   | { type: 'output'; data: number[] }
-  | { type: 'exit'; code: number | null }
+  // portable-pty 0.9: ExitStatus::exit_code() her zaman u32 döner (Option değil).
+  | { type: 'exit'; code: number }
 
 /** Frontend tarafında oluşturulup invoke argümanı olarak backend'e verilir. */
 export function createPtyChannel(onEvent: (event: PtyEvent) => void): Channel<PtyEvent> {
@@ -124,6 +125,11 @@ export function ptyListEngineAdapters(query?: string): Promise<string[]> {
 
 export function ptyFindByEngineType(engineType: string): Promise<EngineMetadata[]> {
   return invoke<EngineMetadata[]>('pty_find_by_engine_type', { engineType })
+}
+
+/** Tek adaptörün metadata'sı — Settings UI id → metadata çözümlemesi. */
+export function ptyAdapterMetadata(id: string): Promise<EngineMetadata> {
+  return invoke<EngineMetadata>('pty_adapter_metadata', { id })
 }
 
 export function listAgents(): Promise<AgentRecord[]> {

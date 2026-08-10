@@ -18,7 +18,12 @@ use crate::db::AppDb;
 use crate::pty::registry::PtyManager;
 
 /// Frontend'e giden PTY olayı (serde tag'i: `kind.type = "output" | "exit"`).
+///
+/// NOT: Channel payload'ları serde ile birebir serialize edilir; Tauri alan
+/// adlarını dönüştürmez. Frontend `agentId`/`executionId` beklediği için
+/// camelCase rename zorunlu — aksi halde tüm olaylar sessizce düşer.
 #[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct PtyEvent {
   pub agent_id: String,
   pub execution_id: String,
@@ -81,15 +86,14 @@ pub fn start_output_pump(
 
       if let Ok(mut sessions) = state.sessions.lock() {
         if let Some(session) = sessions.get_mut(&agent_id) {
-          if session.execution_id == execution_id {
-            // Mutable erişimle child durumunu kontrol et.
-            if let Ok(Some(status)) = session.child.try_wait() {
-              exit_code = status.exit_code();
-              remove = true;
-            }
-          } else {
+          if session.execution_id != execution_id {
             // Bu agent ID'sini farklı bir execution devralmış; monitor artık geçersiz.
             break;
+          }
+          // Mutable erişimle child durumunu kontrol et.
+          if let Ok(Some(status)) = session.child.try_wait() {
+            exit_code = status.exit_code();
+            remove = true;
           }
         } else {
           // Oturum zaten kaldırılmış (agent_stop tarafından).

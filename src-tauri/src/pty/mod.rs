@@ -24,6 +24,35 @@ pub mod registry;
 pub mod runtime;
 pub mod worktree;
 
+/// Repo kökünü çözer. Öncelik bilinçli override'a (`AGENTHUB_REPO_PATH` env)
+/// verilir; aksi halde uygulama sürecinin çalışma dizini kullanılır
+/// (FAZ0 basit davranışı; dialog ile repo seçimi FAZ1'de).
+fn resolve_repo_root() -> String {
+  if let Ok(raw) = std::env::var("AGENTHUB_REPO_PATH") {
+    let trimmed = raw.trim();
+    if !trimmed.is_empty() {
+      return trimmed.to_string();
+    }
+  }
+  std::env::current_dir()
+    .unwrap_or_default()
+    .to_string_lossy()
+    .to_string()
+}
+
+/// Oturum zaten açıksa spawn'dan ÖNCE hata ver — aksi halde register hatasında
+/// yetim (kill edilmemiş) bir süreç kalırdı.
+fn ensure_not_running(manager: &State<PtyManager>, agent_id: &str) -> Result<(), String> {
+  let sessions = manager
+    .sessions
+    .lock()
+    .map_err(|_| "pty sessions lock poisoned".to_string())?;
+  if sessions.contains_key(agent_id) {
+    return Err(format!("agent {agent_id} is already running"));
+  }
+  Ok(())
+}
+
 /// Ajanın çalışacağı dizini çözer: önce ajanın yönetilen worktree'si,
 /// yoksa repo köküne geri düşer (FAZ0 davranışı).
 fn resolve_agent_workdir(repo_path: &str, agent_id: &str) -> String {
@@ -68,6 +97,19 @@ pub fn pty_list_all_ids(adapters: State<EngineAdapterRegistry>) -> Result<Vec<St
   adapters.list_ids()
 }
 
+/// Tek adaptörün metadata'sını döndürür; Settings UI id → metadata çözümlemesini
+/// bununla yapar (frontend'deki id→engine_type tahminine gerek kalmaz).
+#[tauri::command]
+pub fn pty_adapter_metadata(
+  adapters: State<EngineAdapterRegistry>,
+  id: String,
+) -> Result<EngineMetadata, String> {
+  adapters
+    .get(&id)?
+    .map(|adapter| adapter.metadata())
+    .ok_or_else(|| format!("no adapter registered with id '{id}'"))
+}
+
 #[tauri::command]
 pub fn pty_unregister_engine_adapter(
   adapters: State<EngineAdapterRegistry>,
@@ -98,6 +140,7 @@ pub fn pty_find_by_version(
 
 /// Genel shell/PTY spawn (frontend'den program+args alır).
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri state/channel enjeksiyonu argüman sayısını şişirir
 pub fn agent_spawn(
   app: AppHandle,
   manager: State<PtyManager>,
@@ -109,18 +152,20 @@ pub fn agent_spawn(
   rows: u16,
   channel: Channel<PtyEvent>,
 ) -> Result<AgentSpawnResult, String> {
+  // Oturum çakışmasını spawn'dan önce yakala (yetim süreç önlemi).
+  ensure_not_running(&manager, &agent_id)?;
+
   // Worktree güvenli şekilde backend'de çözülür; frontend'e güvenilmez.
-  let repo_path = std::env::current_dir()
-    .unwrap_or_default()
-    .to_string_lossy()
-    .to_string();
+  let repo_path = resolve_repo_root();
   let worktree_path = resolve_agent_workdir(&repo_path, &agent_id);
 
   let envs = agent_envs(&agent_id, &worktree_path);
   let cmd = build_command(program, args, Some(worktree_path), envs);
 
+  // Yalnızca "pty" motorlu adaptörler: shell spawn'ı alfabetik sırayla
+  // claude-code gibi CLI adaptörlerine kaymasın.
   let adapter = adapters
-    .select_default()?
+    .select_default_for_engine_type("pty")?
     .ok_or_else(|| "no PTY engine adapter available".to_string())?;
   let adapter_id = adapter.id().to_string();
   let spawned = adapter.spawn(cmd, cols, rows)?;
@@ -146,6 +191,7 @@ pub fn agent_spawn(
 /// Motor tipine göre spawn (ör. `engine_type = "claude"`): adaptör komutu kendi
 /// kurallarıyla kurar (CliSpawnOptions). `program/args` frontend'den gelmez.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri state/channel enjeksiyonu argüman sayısını şişirir
 pub fn agent_spawn_engine(
   app: AppHandle,
   manager: State<PtyManager>,
@@ -156,6 +202,9 @@ pub fn agent_spawn_engine(
   rows: u16,
   channel: Channel<PtyEvent>,
 ) -> Result<AgentSpawnResult, String> {
+  // Oturum çakışmasını spawn'dan önce yakala (yetim süreç önlemi).
+  ensure_not_running(&manager, &agent_id)?;
+
   let adapter = adapters
     .find_by_engine_type(&engine_type)?
     .into_iter()
@@ -163,10 +212,7 @@ pub fn agent_spawn_engine(
     .ok_or_else(|| format!("no adapter registered for engine type '{engine_type}'"))?;
   let adapter_id = adapter.id().to_string();
 
-  let repo_path = std::env::current_dir()
-    .unwrap_or_default()
-    .to_string_lossy()
-    .to_string();
+  let repo_path = resolve_repo_root();
   let worktree_path = resolve_agent_workdir(&repo_path, &agent_id);
 
   let opts = CliSpawnOptions {
@@ -216,7 +262,13 @@ fn register_session(
       .map_err(|_| "pty sessions lock poisoned".to_string())?;
 
     if sessions.contains_key(&id) {
-      return Err(format!("agent {} is already running", id));
+      // TOCTOU yedek koruması: bu noktada süreç spawn edilmiş durumdadır;
+      // hata dönerken yetim bırakmamak için öldürülür.
+      drop(sessions);
+      let mut child = spawned.child;
+      let _ = child.kill();
+      let _ = child.wait();
+      return Err(format!("agent {id} is already running"));
     }
 
     sessions.insert(

@@ -185,6 +185,42 @@ impl EngineAdapterRegistry {
 
     Ok(None)
   }
+
+  /// Belirtilen motor tipine ait adaptörler arasından varsayılanı seçer.
+  ///
+  /// Shell spawn'ının (`agent_spawn`) yanlışlıkla CLI adaptörüne (claude-code
+  /// gibi; alfabetik sırayla öne geçebilir) gitmesini engeller.
+  /// Sıralama: healthy → detected, alfabetik id (deterministik).
+  pub fn select_default_for_engine_type(
+    &self,
+    engine_type: &str,
+  ) -> Result<Option<Arc<dyn EngineAdapter>>, String> {
+    let adapters = self
+      .adapters
+      .read()
+      .map_err(|_| "engine adapter registry lock poisoned".to_string())?;
+
+    let mut matches: Vec<_> = adapters
+      .values()
+      .filter(|a| a.metadata().engine_type == engine_type)
+      .collect();
+    matches.sort_by(|a, b| a.id().cmp(b.id()));
+
+    // NOT: `adapter` burada `&&Arc`; `adapter.clone()` referansı klonlardı.
+    // Açık `Arc::clone` kullanılır.
+    for adapter in &matches {
+      if adapter.detect() && adapter.health().is_ok() {
+        return Ok(Some(Arc::clone(adapter)));
+      }
+    }
+    for adapter in &matches {
+      if adapter.detect() {
+        return Ok(Some(Arc::clone(adapter)));
+      }
+    }
+
+    Ok(None)
+  }
 }
 
 #[cfg(test)]
@@ -381,6 +417,37 @@ mod tests {
 
     let selected = reg.select_default().unwrap().unwrap();
     assert_eq!(selected.id(), "b");
+  }
+
+  #[test]
+  fn select_default_for_engine_type_never_crosses_engines() {
+    let reg = EngineAdapterRegistry::new();
+    // "claude-..." alfabetik olarak önde gelir; shell seçimi bu yüzden kaymasın.
+    reg
+      .register(Arc::new(MockAdapter {
+        id: "claude-code".to_string(),
+        detected: true,
+        healthy: true,
+        engine_type: "claude".to_string(),
+        version: None,
+      }))
+      .unwrap();
+    reg
+      .register(Arc::new(MockAdapter {
+        id: "portable-pty-native".to_string(),
+        detected: true,
+        healthy: true,
+        engine_type: "pty".to_string(),
+        version: None,
+      }))
+      .unwrap();
+
+    let selected = reg
+      .select_default_for_engine_type("pty")
+      .unwrap()
+      .expect("pty adapter must be selected");
+    assert_eq!(selected.id(), "portable-pty-native");
+    assert!(reg.select_default_for_engine_type("codex").unwrap().is_none());
   }
 
   #[test]

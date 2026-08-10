@@ -6,8 +6,14 @@
 - **`agents/`** — CLI ajan adaptörleri. `claude.rs`: `EngineAdapter` implementasyonu (`id = "claude-code"`, `engine_type = "claude"`). `detect()` → `claude --version`; `health()` → sürüm kontrolü; `spawn_cli()` → worktree dizininde interaktif REPL.
 - **`pty/adapters/mod.rs`** — `spawn_pty_isolated()` ortak yardımcısı (tüm adaptörler kullanır; Windows Job Objects izolasyonu tek noktada). `CliSpawnOptions` ve `spawn_cli()` / `resize()` trait default'ları eklendi.
 - **`pty/runtime/mod.rs`** — Global event yerine **per-session `Channel<PtyEvent>`**. Çıktı ham bayt (`Vec<u8>`), çıkış `Exit { code }`. Olaylar `events` tablosuna yazılır.
-- **Yeni komutlar:** `agent_spawn_engine` (engine_type bazlı), `pty_resize` (xterm fit → PTY boyutu), `agent_list_all` (DB).
+- **Yeni komutlar:** `agent_spawn_engine` (engine_type bazlı), `pty_resize` (xterm fit → PTY boyutu), `pty_adapter_metadata` (id → metadata), `agent_list_all` (DB).
 - `main.rs` → `lib.rs` + `run()` (Tauri 2 konvansiyonu).
+
+## Çalışma dizini / olay kaydı notları
+
+- Spawn cwd'si `AGENTHUB_REPO_PATH` env değişkeniyle override edilebilir; yoksa uygulama sürecinin `current_dir`'i kullanılır (ör. `tauri dev` altında `src-tauri/`). Dialog ile repo seçimi FAZ1'de.
+- `agent_spawn` yalnızca `engine_type = "pty"` adaptörlerinden seçim yapar (`select_default_for_engine_type`); CLI adaptörleri shell spawn'ını devralmaz.
+- `events.agent_id` FK korumalı: frontend sayısal ajan id'leri ("1", "2") gönderir; sayısal olmayan id'lerde olay `agent_id = NULL` ile yazılır (olay asla sessizce düşmez).
 
 ## PTY engine adapters
 

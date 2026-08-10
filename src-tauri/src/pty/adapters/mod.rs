@@ -9,7 +9,9 @@ mod portable_pty_native;
 
 pub use portable_pty_native::PortablePtyAdapter;
 
+// IPC üzerinden frontend'e giden struct'larda camelCase zorunlu (TS tipleriyle birebir eşleşme).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct EngineMetadata {
     pub engine_type: String,
     pub version: Option<String>,
@@ -17,6 +19,7 @@ pub struct EngineMetadata {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct DetectResult {
     pub detected: bool,
     pub version: Option<String>,
@@ -24,6 +27,7 @@ pub struct DetectResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceUtil {
     pub cpu_percent: Option<f32>,
     pub memory_bytes: Option<u64>,
@@ -31,6 +35,7 @@ pub struct ResourceUtil {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct HealthReport {
     pub ok: bool,
     pub message: Option<String>,
@@ -163,6 +168,9 @@ pub(crate) fn spawn_pty_isolated(
     })
     .map_err(|e| e.to_string())?;
 
+  // NOT: `mut` yalnızca Windows hata yollarındaki child.kill() (&mut self) için
+  // gerekli; Unix build'inde unused_mut üretir — allow her iki hedefi de temizler.
+  #[allow(unused_mut)]
   let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
 
   // Windows'ta Job Object handle'ı struct kurulumunda (aşağıda) kullanıldığı
