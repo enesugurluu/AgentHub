@@ -31,3 +31,6 @@ src-tauri/gen
 # Claude Code kişisel ayarlar (takımla paylaşılmaz)
 CLAUDE.local.md
 .claude/settings.local.json
+
+# Yerel tauri dev hata logu (arti dosya)
+.tauri-dev.err

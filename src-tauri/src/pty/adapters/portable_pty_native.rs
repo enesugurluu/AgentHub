@@ -2,7 +2,8 @@ use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::time::Duration;
 
 use super::{
-  spawn_pty_isolated, DetectResult, EngineAdapter, EngineMetadata, HealthReport, SpawnedPty,
+  spawn_pty_isolated, stop_child_tree, DetectResult, EngineAdapter, EngineMetadata, HealthReport,
+  SpawnedPty,
 };
 
 /// Built-in adapter backed by the `portable-pty` crate's native PTY implementation.
@@ -65,9 +66,8 @@ impl EngineAdapter for PortablePtyAdapter {
   }
 
   fn stop(&self, child: &mut (dyn portable_pty::Child + Send + Sync)) -> Result<(), String> {
-    child.kill().map_err(|e| e.to_string())?;
-    let _ = child.wait();
-    Ok(())
+    // Unix'te süreç grubu, Windows'ta Job Object ile ağaç temizliği.
+    stop_child_tree(child)
   }
 }
 

@@ -13,8 +13,8 @@ use std::time::Duration;
 use portable_pty::{CommandBuilder, native_pty_system, PtySize};
 
 use crate::pty::adapters::{
-  spawn_pty_isolated, CliSpawnOptions, DetectResult, EngineAdapter, EngineMetadata, HealthReport,
-  ResourceUtil, SpawnedPty,
+  spawn_pty_isolated, stop_child_tree, CliSpawnOptions, DetectResult, EngineAdapter,
+  EngineMetadata, HealthReport, ResourceUtil, SpawnedPty,
 };
 
 /// Claude Code CLI adaptörü.
@@ -145,9 +145,8 @@ impl EngineAdapter for ClaudeAdapter {
   }
 
   fn stop(&self, child: &mut (dyn portable_pty::Child + Send + Sync)) -> Result<(), String> {
-    child.kill().map_err(|e| e.to_string())?;
-    let _ = child.wait();
-    Ok(())
+    // Unix'te süreç grubu, Windows'ta Job Object ile ağaç temizliği.
+    stop_child_tree(child)
   }
 }
 

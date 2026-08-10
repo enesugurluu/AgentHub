@@ -7,6 +7,8 @@
 //!   tablosuna yazılır.
 
 use std::io::Read;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -44,11 +46,16 @@ pub fn start_output_pump(
   mut reader: Box<dyn Read + Send>,
   channel: Channel<PtyEvent>,
 ) {
+  // Oturum telemetrisi: pompa bayt sayar, exit olayında events tablosuna yazılır
+  // (FAZ0 kabul kriteri 4 — chunk başına DB kaydı yerine kümülatif sayaç).
+  let output_bytes = Arc::new(AtomicU64::new(0));
+
   // -- Çıktı pompası: reader → Channel (ham bayt) ------------------------------
   {
     let agent_id = agent_id.clone();
     let execution_id = execution_id.clone();
     let channel = channel.clone();
+    let output_bytes = output_bytes.clone();
 
     thread::spawn(move || {
       let mut buf = [0u8; 8192];
@@ -56,6 +63,7 @@ pub fn start_output_pump(
         match reader.read(&mut buf) {
           Ok(0) => break,
           Ok(n) => {
+            output_bytes.fetch_add(n as u64, Ordering::Relaxed);
             let event = PtyEvent {
               agent_id: agent_id.clone(),
               execution_id: execution_id.clone(),
@@ -114,7 +122,12 @@ pub fn start_output_pump(
         let _ = channel.send(event);
 
         if let Some(db) = app.try_state::<AppDb>() {
-          let payload = serde_json::json!({ "executionId": execution_id, "code": exit_code });
+          let total_output = output_bytes.load(Ordering::Relaxed);
+          let payload = serde_json::json!({
+            "executionId": execution_id,
+            "code": exit_code,
+            "outputBytes": total_output,
+          });
           let _ = db.record_event(
             Some(&agent_id),
             None,

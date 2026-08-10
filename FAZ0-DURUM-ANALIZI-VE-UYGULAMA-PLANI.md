@@ -367,3 +367,30 @@ cargo add tauri-plugin-dialog
 pnpm biome check . && pnpm tsc -b && pnpm build
 cd src-tauri && cargo test && cargo clippy --all-targets -- -D warnings
 ```
+
+---
+
+## 12. Kapanış Denetimi (2026-08-10, arena/019fec13-agenthub)
+
+PR #8 ile gelen düzeltmeler sonrası yapılan son tur denetimi; CI (3 OS) yeşil.
+
+### §7 kabul kriterlerinin nihai durumu
+
+| # | Kriter | Durum |
+|:--:|:---|:---|
+| 1 | `claude` detect + health | ✅ detect `claude --version` ile sürüm raporlar; health hızlı sürüm kapısı (kasıtlı: gerçek `claude doctor` parse'ı Faz 2'ye ertelendi — her health çağrısında interaktif komut koşturmak pratik değil) |
+| 2 | Spawn + Channel çıktı + stdin + tam ağaç kapanışı | ✅ **Unix process-group kill eklendi** (`stop_child_tree` — PTY çocuğu session lideri, `kill -KILL -<pgid>` torunları toplar; Windows'ta Job Object) |
+| 3 | 10K+ satırda akıcılık | ✅ WebGL renderer + canvas fallback + 10K scrollback |
+| 4 | events tablosu (spawn/exit) + WAL | ✅ spawn/spawn_engine/stopped/exit kayıtları; exit payload'ında `outputBytes` kümülatif telemetri (chunk başına kayıt bilinçli olarak yok) |
+| 5 | Layout + shadcn | ✅ TopBar + grid + sekmeli terminal (9 shadcn bileşeni) |
+| 6 | biome / tsc / cargo test + pre-commit | ✅ CI'da 3 OS'ta otomatik; husky pre-commit |
+| 7 | Platform-bağımsız kod yolu | ✅ shell seçimi platforma göre; CI derlemesi kanıtı |
+| 8 | CLAUDE.md + .claude/settings.json | ✅ mevcut (kişisel dosyalar gitignore'lu) |
+
+### Bilinçli ertelemeler (FAZ1+ backlog'una yazıldı)
+
+- `SpawnOptions`'ın tam hali (budget/turns/model/non-interactive) — şu an `CliSpawnOptions { workdir, env, args }`.
+- `xterm-addon-serialize` bağımlılığı duruyor ama bağlı değil (sekme buffer persist, FAZ1).
+- Gerçek `claude doctor` parse'ı (health hızlı kapı yeterli).
+- Dialog tabanlı repo seçici UI (`AGENTHUB_REPO_PATH` env köprüsü mevcut).
+- `.tauri-dev.err` log artığı repodan temizlendi.

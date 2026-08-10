@@ -148,6 +148,35 @@ pub struct SpawnedPty {
   pub job_handle: Option<isize>,
 }
 
+/// Çocuk süreci **ve tüm süreç ağacını** sonlandırır (tüm adaptörlerin
+/// `stop()` implementasyonu bunu kullanır — FAZ0 kabul kriteri 2).
+///
+/// - **Unix:** PTY slave'i yeni bir session'ın lideridir (setsid + TIOCSCTTY),
+///   dolayısıyla çocuğun pid'i = process-group id'sidir. `kill -KILL -<pgid>`
+///   torun süreçleri de toplar. Yeni crate bağımlılığı eklememek için `kill`
+///   doğrudan exec edilir (shell'e gerek yok; `kill` POSIX'te garantili).
+/// - **Windows:** ağaç, oturumun Job Object'i (KILL_ON_JOB_CLOSE) `PtySession`
+///   Drop'ta handle kapanınca temizlenir; burada doğrudan çocuk yeterli.
+pub(crate) fn stop_child_tree(
+  child: &mut (dyn portable_pty::Child + Send + Sync),
+) -> Result<(), String> {
+  let kill_result = child.kill().map_err(|e| e.to_string());
+
+  #[cfg(unix)]
+  {
+    // Grup temizliği, kill sonucundan bağımsız her zaman denensin:
+    // çocuk zaten ölmüş olsa bile torunlar hayatta kalabilir.
+    if let Some(pid) = child.process_id() {
+      let _ = std::process::Command::new("kill")
+        .args(["-KILL", &format!("-{pid}")])
+        .status();
+    }
+  }
+
+  let _ = child.wait();
+  kill_result
+}
+
 /// Ortak PTY spawn yardımcısı: `portable-pty` ile süreç açar ve Windows'ta
 /// Job Objects (KILL_ON_JOB_CLOSE) ile child ağacını izole eder.
 /// Tüm adaptörler bu fonksiyonu kullanır (izolasyon tek noktada).

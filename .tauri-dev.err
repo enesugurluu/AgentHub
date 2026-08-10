@@ -1,7 +1,0 @@
-     Running BeforeDevCommand (`pnpm dev`)
-     Running DevCommand (`cargo  run --no-default-features --color always --`)
-        Info Watching D:\Projeler\AgentHub\AgentHub\agentHub\src-tauri for changes...
-[1m[93mwarning[0m: linker stdout: D:\Projeler\AgentHub\AgentHub\agentHub\src-tauri\target\debug\deps\agenthub_lib.dll.lib kitapligi ve D:\Projeler\AgentHub\AgentHub\agentHub\src-tauri\target\debug\deps\agenthub_lib.dll.exp nesnesi olusturuluyor
-[1m[93mwarning[0m: `agenthub` (lib) generated 1 warning
-[1m[92m    Finished[0m ]8;;https://doc.rust-lang.org/cargo/reference/profiles.html#default-profiles\`dev` profile [unoptimized + debuginfo]]8;;\ target(s) in 0.80s
-[1m[92m     Running[0m `target\debug\agenthub.exe`

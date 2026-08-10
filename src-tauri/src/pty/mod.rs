@@ -395,8 +395,7 @@ pub fn agent_stop(
       let _ = adapter.stop(session.child.as_mut());
     } else {
       // sessions can outlive adapter registrations during development
-      let _ = session.child.kill();
-      let _ = session.child.wait();
+      let _ = adapters::stop_child_tree(session.child.as_mut());
     }
 
     if let Some(db) = app.try_state::<AppDb>() {
