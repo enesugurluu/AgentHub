@@ -339,6 +339,17 @@ pub fn agent_spawn_engine(
     .ok_or_else(|| format!("no adapter registered for engine type '{engine_type}'"))?;
   let adapter_id = adapter.id().to_string();
 
+  // WP-13: adaptörün desteklemediği alanlar yok sayılır ama görünür (capability ilanı).
+  if options.max_budget_usd.is_some() && !adapter.supports("budget") {
+    tracing::warn!(adapter = adapter_id, "budget flag'i desteklenmiyor — yok sayılıyor");
+  }
+  if options.max_turns.is_some() && !adapter.supports("turns") {
+    tracing::warn!(adapter = adapter_id, "max_turns flag'i desteklenmiyor — yok sayılıyor");
+  }
+  if options.effort.is_some() && !adapter.supports("effort") {
+    tracing::warn!(adapter = adapter_id, "effort flag'i desteklenmiyor — yok sayılıyor");
+  }
+
   let db = app.try_state::<AppDb>().map(|s| s.inner());
   let repo_path = resolve_repo_root(&app);
   let worktree_path = resolve_agent_workdir(db, &repo_path, &agent_id)?;
@@ -448,6 +459,14 @@ pub fn task_assign(
     non_interactive: true,
     task_file: Some(task_file),
   };
+
+  // WP-13: desteklenmeyen flag'ler için görünür uyarı (capability ilanına göre).
+  if opts.max_budget_usd.is_some() && !adapter.supports("budget") {
+    tracing::warn!(adapter = adapter_id, "budget flag'i desteklenmiyor — yok sayılıyor");
+  }
+  if opts.max_turns.is_some() && !adapter.supports("turns") {
+    tracing::warn!(adapter = adapter_id, "max_turns flag'i desteklenmiyor — yok sayılıyor");
+  }
 
   let spawned = adapter.spawn_cli(opts, cols, rows)?;
 

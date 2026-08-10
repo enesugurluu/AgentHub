@@ -8,6 +8,7 @@ import { Separator } from '@/components/ui/separator'
 import { isTauriRuntime } from '@/lib/ipc'
 import { useProjectsStore } from '@/store/projects'
 import { useSettingsStore } from '@/store/settings'
+import { useTerminalStore } from '@/store/terminal'
 
 export function TopBar() {
   const theme = useSettingsStore((s) => s.theme)
@@ -15,6 +16,9 @@ export function TopBar() {
   const repoPath = useProjectsStore((s) => s.repoPath)
   const loadRepoPath = useProjectsStore((s) => s.loadRepoPath)
   const selectRepo = useProjectsStore((s) => s.selectRepo)
+  // WP-13: Progress.cost birikimi — M2'de settings'ten gerçek bütçe.
+  const sessions = useTerminalStore((s) => s.sessions)
+  const totalCost = Object.values(sessions).reduce((acc, s) => acc + s.totalCostUsd, 0)
 
   useEffect(() => {
     void loadRepoPath()
@@ -70,9 +74,12 @@ export function TopBar() {
       </div>
 
       <div className="ml-auto flex items-center gap-2">
-        <div className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs">
+        <div
+          className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs"
+          title="Canlı maliyet (yaklaşık — tam dashboard M2'de)"
+        >
           <WalletIcon className="size-3.5 text-muted-foreground" />
-          <span className="tabular-nums text-muted-foreground">$0.00</span>
+          <span className="tabular-nums text-muted-foreground">≈ ${totalCost.toFixed(2)}</span>
           <span className="text-muted-foreground/50">/</span>
           <span className="tabular-nums">$50.00</span>
         </div>

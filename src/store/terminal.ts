@@ -11,6 +11,8 @@ export type SessionState = {
   engineType: string
   /** terminal kayıtlarında gösterilecek toplam karakter sayısı */
   outputBytes: number
+  /** Progress.cost birikimi (WP-13) — TopBar CostMeter bunu tüketir. */
+  totalCostUsd: number
   error: string | null
 }
 
@@ -32,6 +34,7 @@ type TerminalStore = {
   markError: (agentId: string, error: string) => void
   stopSession: (agentId: string) => void
   bumpOutput: (agentId: string, bytes: number) => void
+  addCost: (agentId: string, cost: number) => void
   getSession: (agentId: string) => SessionState | undefined
   setBuffer: (agentId: string, text: string) => void
 }
@@ -42,6 +45,7 @@ const initialSession = (agentId: string, engineType: string): SessionState => ({
   status: 'starting',
   engineType,
   outputBytes: 0,
+  totalCostUsd: 0,
   error: null,
 })
 
@@ -119,6 +123,18 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
         sessions: {
           ...state.sessions,
           [agentId]: { ...session, outputBytes: session.outputBytes + bytes },
+        },
+      }
+    }),
+
+  addCost: (agentId, cost) =>
+    set((state) => {
+      const session = state.sessions[agentId]
+      if (!session) return state
+      return {
+        sessions: {
+          ...state.sessions,
+          [agentId]: { ...session, totalCostUsd: session.totalCostUsd + cost },
         },
       }
     }),

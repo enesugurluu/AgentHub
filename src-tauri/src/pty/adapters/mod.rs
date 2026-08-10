@@ -111,6 +111,16 @@ pub trait EngineAdapter: Send + Sync + 'static {
       EngineMetadata::default()
   }
 
+  /// Capability kontrolü (WP-13): adaptör `feature`'ı (budget/turns/effort/print/...)
+  /// destekliyor mu? Desteklenmeyen `SpawnOptions` alanları sessizce yok sayılır
+  /// ama `tracing::warn!` ile görünür kılınır.
+  fn supports(&self, feature: &str) -> bool {
+      self.metadata()
+          .capabilities
+          .iter()
+          .any(|c| c == feature)
+  }
+
   /// Returns true if this adapter can run on the current host (OS, availability of
   /// underlying PTY APIs, etc).
   fn detect(&self) -> bool;

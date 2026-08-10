@@ -133,6 +133,8 @@ pub fn start_output_pump(
   // Oturum telemetrisi: pompa bayt sayar, exit olayında events tablosuna yazılır
   // (FAZ0 kabul kriteri 4 — chunk başına DB kaydı yerine kümülatif sayaç).
   let output_bytes = Arc::new(AtomicU64::new(0));
+  // Toplam maliyet (WP-13): Progress.cost birikimi — exit payload + JSONL'a yazılır.
+  let total_cost = Arc::new(std::sync::Mutex::new(0.0f64));
 
   // -- Çıktı pompası: reader → parser + Channel + JSONL --------------------------
   {
@@ -141,6 +143,7 @@ pub fn start_output_pump(
     let execution_id = execution_id.clone();
     let channel = channel.clone();
     let output_bytes = output_bytes.clone();
+    let total_cost = total_cost.clone();
     let transcript_path = transcript_path.clone();
 
     thread::spawn(move || {
@@ -156,6 +159,10 @@ pub fn start_output_pump(
           }
         }
         if let PtyEventKind::Signal { ref signal } = event.kind {
+          // Maliyet birikimi (WP-13).
+          if let OutputSignal::Progress { cost, .. } = signal {
+            *total_cost.lock().unwrap() += cost;
+          }
           // JSONL progress satırı (WP-11/13).
           if let Some(path) = &transcript_path {
             if let OutputSignal::Progress {
@@ -265,7 +272,8 @@ pub fn start_output_pump(
         };
         let _ = channel.send(event);
 
-        // JSONL exit satırı (docs 12.2; WP-11).
+        // JSONL exit satırı (docs 12.2; WP-11/13 — totalCostUsd dahil).
+        let session_cost = *total_cost.lock().unwrap();
         if let Some(path) = &transcript_path {
           let _ = append_transcript_entry(
             path,
@@ -274,6 +282,7 @@ pub fn start_output_pump(
               "type": "exit",
               "code": exit_code,
               "outputBytes": output_bytes.load(Ordering::Relaxed),
+              "totalCostUsd": session_cost,
             }),
           );
         }
@@ -284,6 +293,7 @@ pub fn start_output_pump(
             "executionId": execution_id,
             "code": exit_code,
             "outputBytes": total_output,
+            "totalCostUsd": session_cost,
           });
           let _ = db.record_event(
             Some(&agent_id),

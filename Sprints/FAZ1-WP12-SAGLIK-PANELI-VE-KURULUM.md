@@ -1,8 +1,16 @@
 # Sprint FAZ1-WP12 — Sağlık Paneli Genişletme ve Motor Kurulum Akışı
 
 > **Kart:** FAZ1-PLANI.md §5 WP-12 · ADR-3
-> **Takvim:** Hafta 3 · Gün 15 (plan: 2026-08-26) · **Süre:** 4 sa · **Öncelik:** P1
-> **Durum:** ⏳ Planlandı
+> **Takvim:** Hafta 3 · Gün 15 (2026-08-26) · **Süre:** 4 sa · **Öncelik:** P1
+> **Durum:** ✅ Kapandı — UI uygulandı; `pnpm check/typecheck/build` yeşil
+>
+> **Uygulama notları (2026-08-10):**
+> - SettingsDialog "Motorlar" `useEngineRegistry` tabanlı yeniden yazıldı: her adaptör için
+>   kurulu/değil rozeti + sürüm + capability + `install_hint`.
+> - "Kur" → AlertDialog onay → `install-<engine>` oturumu terminal sekmesinde; PtyTerminal
+>   `install-*` agentId'lerinde otomatik `agentInstallEngine` çağırır (ref-guard'lı, S5 korunur).
+> - "Hızlı Terminal" (repo kökünde shell) bilinçli M2'ye ertelendi — `resolve_agent_workdir`
+>   DB ajanı gerektiriyor; `allow_repo_root` parametresi WP-12 kartında not edildi.
 
 ## 1. Hedef
 

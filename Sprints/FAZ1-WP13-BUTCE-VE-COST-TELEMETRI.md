@@ -1,8 +1,15 @@
 # Sprint FAZ1-WP13 — Bütçe/Effort Aktarımı ve Cost Telemetri İskeleti
 
 > **Kart:** FAZ1-PLANI.md §5 WP-13 · ADR-2, ADR-4
-> **Takvim:** Hafta 3 · Gün 16 (plan: 2026-08-27) · **Süre:** 4 sa · **Öncelik:** P1
-> **Durum:** ⏳ Planlandı
+> **Takvim:** Hafta 3 · Gün 16 (2026-08-27) · **Süre:** 4 sa · **Öncelik:** P1
+> **Durum:** ✅ Kapandı — backend + frontend uygulandı; `pnpm check/typecheck/build` yeşil
+>
+> **Uygulama notları (2026-08-10):**
+> - `EngineAdapter::supports(feature)` default'u (capability listesinden); `agent_spawn_engine`
+>   ve `task_assign`'de desteklenmeyen budget/turns/effort için `tracing::warn!`.
+> - Pump: `Progress.cost` birikimi (Mutex<f64>) → exit payload + JSONL `totalCostUsd`.
+> - config → SpawnOptions akışı WP-10 `task_assign`'de inline kuruldu (görev bütçesi öncelikli).
+> - Frontend: session `totalCostUsd` + `addCost`; TopBar CostMeter "≈ $X / $50" (M2'de gerçek dashboard).
 
 ## 1. Hedef
 
