@@ -3,6 +3,7 @@ import { CrownIcon } from 'lucide-react'
 import { resolveDeskStatus, StatusBadge } from '@/components/OfficeFloor/StatusBadge'
 import type { AgentRecord } from '@/lib/ipc'
 import { cn } from '@/lib/utils'
+import { useTasksStore } from '@/store/tasks'
 import { useTerminalStore } from '@/store/terminal'
 
 /**
@@ -21,7 +22,10 @@ export function AgentDesk({
   onSelect: (id: number) => void
 }) {
   const session = useTerminalStore((s) => s.sessions[String(agent.id)])
+  const tasks = useTasksStore((s) => s.tasks)
   const status = resolveDeskStatus(session?.status, agent.status)
+  // Aktif görev etiketi (WP-10): ajana atanmış in_progress görev.
+  const activeTask = tasks.find((t) => t.assignedAgentId === agent.id && t.column === 'in_progress')
 
   return (
     <button
@@ -57,6 +61,11 @@ export function AgentDesk({
       </span>
       <span className="text-sm font-medium">{agent.name}</span>
       <span className="text-xs text-muted-foreground">{agent.role}</span>
+      {activeTask && (
+        <span className="max-w-full truncate rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
+          {activeTask.title}
+        </span>
+      )}
       <StatusBadge status={status} />
     </button>
   )

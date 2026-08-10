@@ -1,8 +1,15 @@
 # Sprint FAZ1-WP10 — Görev Protokolü (AGENT_TASK.md + Tamamlanma Algılama)
 
 > **Kart:** FAZ1-PLANI.md §5 WP-10 · ADR-6
-> **Takvim:** Hafta 3 · Gün 14–15 (plan: 2026-08-25 → 2026-08-26) · **Süre:** 10–12 sa · **Öncelik:** P0
-> **Durum:** ⏳ Planlandı
+> **Takvim:** Hafta 3 · Gün 14–15 (2026-08-25 → 2026-08-26) · **Süre:** 10–12 sa · **Öncelik:** P0
+> **Durum:** ✅ Kapandı — backend + frontend uygulandı; `pnpm check/typecheck/build` yeşil; `cargo test` CI/kullanıcı makinesinde
+>
+> **Uygulama notları (2026-08-10):**
+> - db.rs: `task_create/get/list(agent_id?)/finalize` + `assign_task` (in_progress, tek açık görev kuralı, backlog-dışı atama reddi) — 3 unit test.
+> - `src-tauri/src/tasks.rs`: `write_agent_task` (AGENT_TASK.md şablonu — docs 10.5/13.1) + `decide_completion` (blok dosyası > tamamlanma dosyası > parser sinyali > exit kodu) — 4 unit test.
+> - `task_assign` komutu: ensure worktree → AGENT_TASK.md → SpawnOptions (task_file + non_interactive + config'ten model/effort/bütçe/turn; görev bütçesi öncelikli) → spawn; oturum `task_id`/`worktree_path` ile etiketlenir.
+> - `PtySession.task_id/worktree_path`; `PtyEvent.task_id`; lifecycle exit'te `decide_completion` → `finalize_task` + `task_completed/task_failed` olayı.
+> - Frontend: tasks store + TaskDialog ("Görev Ver") + InspectorPanel bağlama + AgentDesk aktif görev etiketi; terminal store `channels` (task_assign kanalı).
 
 ## 1. Hedef
 

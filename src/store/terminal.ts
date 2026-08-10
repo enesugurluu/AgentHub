@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 
+import type { PtyEvent } from '@/lib/ipc'
+
 export type SessionStatus = 'idle' | 'starting' | 'running' | 'exited' | 'error'
 
 export type SessionState = {
@@ -17,6 +19,12 @@ type TerminalStore = {
   activeSessionAgentId: string | null
   /** Serialize edilmiş terminal buffer'ları (sekme geri açılışta geri yükleme — WP-11). */
   buffers: Record<string, string>
+  /** Ajan başına PTY kanalı (PtyTerminal mount'ta kaydeder) — task_assign bunu kullanır (WP-10). */
+  channels: Record<string, import('@tauri-apps/api/core').Channel<PtyEvent>>
+  registerChannel: (
+    agentId: string,
+    channel: import('@tauri-apps/api/core').Channel<PtyEvent>,
+  ) => void
   setActive: (agentId: string | null) => void
   startSession: (agentId: string, engineType: string) => void
   markRunning: (agentId: string, executionId: string) => void
@@ -41,6 +49,10 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
   sessions: {},
   activeSessionAgentId: null,
   buffers: {},
+  channels: {},
+
+  registerChannel: (agentId, channel) =>
+    set((state) => ({ channels: { ...state.channels, [agentId]: channel } })),
 
   setActive: (agentId) => set({ activeSessionAgentId: agentId }),
 

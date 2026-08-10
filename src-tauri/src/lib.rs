@@ -9,6 +9,7 @@
 pub mod agents;
 pub mod db;
 pub mod pty;
+pub mod tasks;
 pub mod worktree;
 
 use tauri::Manager;
@@ -61,6 +62,11 @@ pub fn run() {
       db::settings_get,
       db::settings_set,
       db::repo_select,
+      db::task_create,
+      db::task_get,
+      db::task_list,
+      db::task_finalize,
+      pty::task_assign,
       worktree::worktree_create,
       worktree::worktree_remove,
       worktree::worktree_list,

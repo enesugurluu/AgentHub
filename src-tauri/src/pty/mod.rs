@@ -225,6 +225,8 @@ pub fn agent_spawn(
     "spawn",
     "pty",
     false,
+    None,
+    None,
   )?;
 
   Ok(AgentSpawnResult {
@@ -299,6 +301,8 @@ pub fn agent_install_engine(
     "install",
     "pty",
     false,
+    None,
+    None,
   )?;
 
   Ok(AgentSpawnResult {
@@ -362,10 +366,112 @@ pub fn agent_spawn_engine(
     "spawn_engine",
     &engine_type,
     non_interactive,
+    None,
+    None,
   )?;
 
   Ok(AgentSpawnResult {
     agent_id,
+    execution_id,
+  })
+}
+
+/// Görevi ajana atar ve spawn eder (docs 13.1–13.2; ADR-6/WP-10):
+/// worktree garanti → `AGENT_TASK.md` → non-interactive `SpawnOptions` (bütçe/turn)
+/// → `agent_spawn_engine` mantığıyla spawn; oturum `task_id` ile etiketlenir,
+/// `tasks` satırı `in_progress`'e alınır. Tamamlanma exit'te algılanır (runtime).
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub fn task_assign(
+  app: AppHandle,
+  manager: State<PtyManager>,
+  adapters: State<EngineAdapterRegistry>,
+  db: State<AppDb>,
+  agent_id: i64,
+  task_id: i64,
+  cols: u16,
+  rows: u16,
+  channel: Channel<PtyEvent>,
+) -> Result<AgentSpawnResult, String> {
+  let agent_id_str = agent_id.to_string();
+  ensure_not_running(&manager, &agent_id_str)?;
+
+  let agent = db.get_agent(agent_id)?;
+  let task = db.get_task(task_id)?;
+  if agent.status == "fired" {
+    return Err(format!("ajan {agent_id} işten çıkarılmış — görev atanamaz"));
+  }
+
+  // Ajanın motoru için adaptör.
+  let adapter = adapters
+    .find_by_engine_type(&agent.motor)?
+    .into_iter()
+    .next()
+    .ok_or_else(|| format!("ajanın motoru için adaptör yok: {}", agent.motor))?;
+  let adapter_id = adapter.id().to_string();
+
+  // Worktree garanti (ADR-5) + AGENT_TASK.md.
+  let repo_path = resolve_repo_root(&app);
+  let base_branch = db
+    .setting_get("main_branch")?
+    .unwrap_or_else(|| "main".to_string());
+  let info = ensure_agent_worktree(&repo_path, &agent_id_str, &agent.name, &base_branch)?;
+  let wt_path = std::path::PathBuf::from(&info.path);
+  let task_file = crate::tasks::write_agent_task(&wt_path, &task, &agent, &info.branch_name)?;
+
+  // Ajan config'inden model/effort/bütçe/turn; görev bütçesi önceliklidir.
+  let config: serde_json::Value =
+    serde_json::from_str(agent.config_json.as_deref().unwrap_or("{}")).unwrap_or_default();
+  let budget = task.budget.or_else(|| {
+    config
+      .get("max_budget_usd")
+      .and_then(|v| v.as_f64())
+  });
+  let turns = config.get("max_turns").and_then(|v| v.as_u64()).map(|v| v as u32);
+  let model = config.get("model").and_then(|v| v.as_str()).map(|s| s.to_string());
+  let effort = config
+    .get("effort")
+    .and_then(|v| v.as_str())
+    .and_then(|s| {
+      serde_json::from_str::<crate::pty::adapters::Effort>(&format!("\"{s}\""))
+        .ok()
+    });
+
+  let opts = SpawnOptions {
+    workdir: wt_path.clone(),
+    env: agent_envs(&agent_id_str, &info.path),
+    args: Vec::new(),
+    model,
+    effort,
+    max_budget_usd: budget,
+    max_turns: turns,
+    non_interactive: true,
+    task_file: Some(task_file),
+  };
+
+  let spawned = adapter.spawn_cli(opts, cols, rows)?;
+
+  let execution_id = Uuid::new_v4().to_string();
+  register_session(
+    &app,
+    &manager,
+    &agent_id_str,
+    &execution_id,
+    &adapter_id,
+    spawned,
+    channel,
+    "task_assign",
+    &agent.motor,
+    true,
+    Some(task_id),
+    Some(wt_path),
+  )?;
+
+  // tasks → in_progress.
+  db.assign_task(task_id, agent_id, &info.path)?;
+
+  Ok(AgentSpawnResult {
+    agent_id: agent_id_str,
     execution_id,
   })
 }
@@ -386,6 +492,8 @@ fn register_session(
   event_type: &str,
   engine_type: &str,
   non_interactive: bool,
+  task_id: Option<i64>,
+  workdir: Option<std::path::PathBuf>,
 ) -> Result<(), String> {
   let id = agent_id.to_string();
   let execution_id_owned = execution_id.to_string();
@@ -422,6 +530,8 @@ fn register_session(
         child: spawned.child,
         last_completion: std::sync::Arc::new(std::sync::Mutex::new(None)),
         transcript_path: transcript_path.clone(),
+        task_id,
+        worktree_path: workdir.clone(),
         #[cfg(target_os = "windows")]
         job_handle: spawned.job_handle,
       },
@@ -430,7 +540,7 @@ fn register_session(
 
   if let Some(db) = app.try_state::<AppDb>() {
     let payload = serde_json::json!({ "executionId": execution_id, "adapter": adapter_id });
-    let _ = db.record_event(Some(&id), None, event_type, Some(&payload.to_string()));
+    let _ = db.record_event(Some(&id), task_id, event_type, Some(&payload.to_string()));
   }
 
   start_output_pump(
@@ -441,6 +551,8 @@ fn register_session(
     channel,
     crate::pty::runtime::parser::select_parser(engine_type, non_interactive),
     transcript_path,
+    task_id,
+    workdir,
   );
   Ok(())
 }

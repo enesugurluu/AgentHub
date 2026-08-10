@@ -1,6 +1,14 @@
-import { BotIcon, CircleDollarSignIcon, FolderGit2Icon, KeyRoundIcon, PlayIcon } from 'lucide-react'
+import {
+  BotIcon,
+  CircleDollarSignIcon,
+  ClipboardListIcon,
+  FolderGit2Icon,
+  KeyRoundIcon,
+} from 'lucide-react'
+import { useState } from 'react'
 
 import { FireButton } from '@/components/Settings/FireDialog'
+import { TaskDialog } from '@/components/Tasks/TaskDialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -11,6 +19,7 @@ import { useTerminalStore } from '@/store/terminal'
 export function InspectorPanel() {
   const { agents, selectedAgentId } = useAgentStore()
   const sessions = useTerminalStore((s) => s.sessions)
+  const [taskOpen, setTaskOpen] = useState(false)
 
   // `fired` ajanlar Inspector'da da görünmez (WP-08).
   const agent = selectVisibleAgents(agents).find((a) => a.id === selectedAgentId) ?? null
@@ -69,20 +78,24 @@ export function InspectorPanel() {
           ))}
           <Separator className="mt-2" />
           <div className="flex flex-col gap-2 pt-1">
-            {session?.status !== 'running' && (
+            {session?.status !== 'running' ? (
               <Button
                 variant="outline"
                 size="sm"
                 className="w-full"
-                title="Görev Ver (WP-10 ile gelecek)"
-                disabled
+                onClick={() => setTaskOpen(true)}
               >
-                <PlayIcon className="size-3.5" />
+                <ClipboardListIcon className="size-3.5" />
                 Görev Ver
               </Button>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Ajan çalışıyor — yeni görev için önce durdurun.
+              </p>
             )}
             <FireButton agent={agent} />
           </div>
+          {agent && <TaskDialog agent={agent} open={taskOpen} onOpenChange={setTaskOpen} />}
           <p className="pt-1 leading-relaxed text-muted-foreground">
             Ajan detayı, izin profili ve bütçe yönetimi Faz 3'te bu panele gelir.
           </p>

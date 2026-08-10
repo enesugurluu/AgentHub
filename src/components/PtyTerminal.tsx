@@ -155,6 +155,8 @@ export function PtyTerminal({
       }
     })
     channelRef.current = channel
+    // task_assign (WP-10) bu kanalı kullanır (backend çıktısı terminale akar).
+    useTerminalStore.getState().registerChannel(agentId, channel)
 
     // Klavye: Ctrl/Cmd+Shift+F arama aç/kapa
     const onKeyDown = (e: KeyboardEvent) => {

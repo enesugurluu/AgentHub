@@ -120,6 +120,7 @@ export type WorktreeRemoveOptions = {
 export type PtyEvent = {
   agentId: string
   executionId: string
+  taskId: number | null
   kind: PtyEventKind
 }
 
@@ -300,6 +301,52 @@ export function settingsSet(key: string, value: string): Promise<void> {
  */
 export function repoSelect(path: string): Promise<string> {
   return invoke<string>('repo_select', { path })
+}
+
+/** Görev kaydı (docs 8.2 alt kümesi — kanban UI M2'de; WP-10 "Görev Ver"). */
+export type TaskRecord = {
+  id: number
+  title: string
+  description: string | null
+  acceptanceCriteria: string | null
+  column: string
+  assignedAgentId: number | null
+  priority: number
+  budget: number | null
+  spentCost: number
+  worktreePath: string | null
+  createdAt: string | null
+  startedAt: string | null
+  completedAt: string | null
+}
+
+export function taskCreate(args: {
+  title: string
+  description?: string | null
+  acceptanceCriteria?: string | null
+  priority?: number
+  budget?: number | null
+}): Promise<TaskRecord> {
+  return invoke<TaskRecord>('task_create', args)
+}
+
+export function taskGet(id: number): Promise<TaskRecord> {
+  return invoke<TaskRecord>('task_get', { id })
+}
+
+export function taskList(agentId?: number | null): Promise<TaskRecord[]> {
+  return invoke<TaskRecord[]>('task_list', { agentId: agentId ?? null })
+}
+
+/** Görevi ajana ata + spawn et (docs 13.1; WP-10). */
+export function taskAssign(args: {
+  agentId: number
+  taskId: number
+  cols: number
+  rows: number
+  channel: Channel<PtyEvent>
+}): Promise<AgentSpawnResult> {
+  return invoke<AgentSpawnResult>('task_assign', args)
 }
 
 export function worktreeCreate(args: {

@@ -24,6 +24,10 @@ pub struct PtySession {
   pub last_completion: Arc<Mutex<Option<crate::pty::runtime::parser::OutputSignal>>>,
   /// JSONL oturum kaydı dosyası (docs 12.2; WP-11) — yoksa None.
   pub transcript_path: Option<PathBuf>,
+  /// Bağlı görev (WP-10 `task_assign`) — yoksa None.
+  pub task_id: Option<i64>,
+  /// Ajan worktree yolu (WP-10 tamamlanma dosyası kontrolü) — yoksa None.
+  pub worktree_path: Option<PathBuf>,
   #[cfg(target_os = "windows")]
   pub job_handle: Option<isize>,
 }

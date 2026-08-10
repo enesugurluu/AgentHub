@@ -417,6 +417,135 @@ impl AppDb {
       .map_err(|e| e.to_string())
   }
 
+  // ---- Görev protokolü (FAZ1 WP-10; docs 13.1–13.2) --------------------------
+
+  /// Yeni görev kaydı (kanban veri omurgası; UI M2'de — şimdilik "Görev Ver" akışı).
+  pub fn create_task(
+    &self,
+    title: &str,
+    description: Option<&str>,
+    acceptance_criteria: Option<&str>,
+    priority: i64,
+    budget: Option<f64>,
+  ) -> Result<TaskRecord, String> {
+    let title = title.trim().to_string();
+    if title.is_empty() {
+      return Err("görev başlığı boş olamaz".to_string());
+    }
+    let conn = self
+      .conn
+      .lock()
+      .map_err(|_| "db lock poisoned".to_string())?;
+    conn
+      .execute(
+        "INSERT INTO tasks (title, description, acceptance_criteria, priority, budget, column)
+         VALUES (?1, ?2, ?3, ?4, ?5, 'backlog')",
+        params![title, description, acceptance_criteria, priority, budget],
+      )
+      .map_err(|e| e.to_string())?;
+    let id = conn.last_insert_rowid();
+    get_task(&conn, id)
+  }
+
+  pub fn get_task(&self, id: i64) -> Result<TaskRecord, String> {
+    let conn = self
+      .conn
+      .lock()
+      .map_err(|_| "db lock poisoned".to_string())?;
+    get_task(&conn, id)
+  }
+
+  /// Görev listesi; `agent_id` verilirse yalnızca o ajana atanmışlar.
+  pub fn list_tasks(&self, agent_id: Option<i64>) -> Result<Vec<TaskRecord>, String> {
+    let conn = self
+      .conn
+      .lock()
+      .map_err(|_| "db lock poisoned".to_string())?;
+    let mut stmt = conn
+      .prepare(
+        "SELECT id, title, description, acceptance_criteria, column, assigned_agent_id,
+                priority, budget, spent_cost, worktree_path, created_at, started_at, completed_at
+         FROM tasks
+         WHERE (?1 IS NULL OR assigned_agent_id = ?1)
+         ORDER BY id",
+      )
+      .map_err(|e| e.to_string())?;
+    let rows = stmt
+      .query_map(params![agent_id], row_to_task)
+      .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+      .map_err(|e| e.to_string())
+  }
+
+  /// Görevi ajana atar: `in_progress` + `started_at` + worktree yolu.
+  /// Ajan başına tek aktif görev kuralı (M2'de kaldırılabilir).
+  pub fn assign_task(
+    &self,
+    task_id: i64,
+    agent_id: i64,
+    worktree_path: &str,
+  ) -> Result<TaskRecord, String> {
+    let conn = self
+      .conn
+      .lock()
+      .map_err(|_| "db lock poisoned".to_string())?;
+
+    // Ajanın başka açık görevi var mı?
+    let open: i64 = conn
+      .query_row(
+        "SELECT COUNT(*) FROM tasks
+         WHERE assigned_agent_id = ?1 AND column IN ('todo','in_progress','review')",
+        params![agent_id],
+        |r| r.get(0),
+      )
+      .map_err(|e| e.to_string())?;
+    if open > 0 {
+      return Err(format!("ajan {agent_id} zaten bir görev üzerinde çalışıyor"));
+    }
+
+    let updated = conn
+      .execute(
+        "UPDATE tasks SET assigned_agent_id = ?2, column = 'in_progress',
+                started_at = COALESCE(started_at, datetime('now')), worktree_path = ?3
+         WHERE id = ?1 AND column = 'backlog'",
+        params![task_id, agent_id, worktree_path],
+      )
+      .map_err(|e| e.to_string())?;
+    if updated == 0 {
+      return Err(format!("görev {task_id} atanamadı (backlog'da değil veya yok)"));
+    }
+    get_task(&conn, task_id)
+  }
+
+  /// Görev kapanışı: `column` (review|failed), maliyet/token sayaçları, `completed_at`.
+  pub fn finalize_task(
+    &self,
+    task_id: i64,
+    column: &str,
+    cost: f64,
+    tokens_in: u64,
+    tokens_out: u64,
+  ) -> Result<TaskRecord, String> {
+    let conn = self
+      .conn
+      .lock()
+      .map_err(|_| "db lock poisoned".to_string())?;
+    let updated = conn
+      .execute(
+        "UPDATE tasks SET column = ?2, spent_cost = ?3,
+                spent_tokens_input = spent_tokens_input + ?4,
+                spent_tokens_output = spent_tokens_output + ?5,
+                completed_at = COALESCE(completed_at, datetime('now'))
+         WHERE id = ?1",
+        params![task_id, column, cost, tokens_in, tokens_out],
+      )
+      .map_err(|e| e.to_string())?;
+    if updated == 0 {
+      return Err(format!("görev bulunamadı: {task_id}"));
+    }
+    get_task(&conn, task_id)
+  }
+
   // ---- Ayarlar (FAZ1 WP-01; WP-06 repo_path kalıcılığı bunu kullanır) -------
 
   pub fn setting_get(&self, key: &str) -> Result<Option<String>, String> {
@@ -538,6 +667,61 @@ fn row_to_agent(row: &rusqlite::Row<'_>) -> rusqlite::Result<AgentRecord> {
   })
 }
 
+/// Frontend'e dönen görev kaydı (camelCase).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskRecord {
+  pub id: i64,
+  pub title: String,
+  pub description: Option<String>,
+  pub acceptance_criteria: Option<String>,
+  pub column: String,
+  pub assigned_agent_id: Option<i64>,
+  pub priority: i64,
+  pub budget: Option<f64>,
+  pub spent_cost: f64,
+  pub worktree_path: Option<String>,
+  pub created_at: Option<String>,
+  pub started_at: Option<String>,
+  pub completed_at: Option<String>,
+}
+
+fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<TaskRecord> {
+  Ok(TaskRecord {
+    id: row.get(0)?,
+    title: row.get(1)?,
+    description: row.get(2)?,
+    acceptance_criteria: row.get(3)?,
+    column: row.get(4)?,
+    assigned_agent_id: row.get(5)?,
+    priority: row.get(6)?,
+    budget: row.get(7)?,
+    spent_cost: row.get(8)?,
+    worktree_path: row.get(9)?,
+    created_at: row.get(10)?,
+    started_at: row.get(11)?,
+    completed_at: row.get(12)?,
+  })
+}
+
+fn get_task(conn: &Connection, id: i64) -> Result<TaskRecord, String> {
+  conn
+    .query_row(
+      "SELECT id, title, description, acceptance_criteria, column, assigned_agent_id,
+              priority, budget, spent_cost, worktree_path, created_at, started_at, completed_at
+       FROM tasks WHERE id = ?1",
+      params![id],
+      row_to_task,
+    )
+    .map_err(|e| {
+      if matches!(e, rusqlite::Error::QueryReturnedNoRows) {
+        format!("görev bulunamadı: {id}")
+      } else {
+        e.to_string()
+      }
+    })
+}
+
 fn get_agent(conn: &Connection, id: i64) -> Result<AgentRecord, String> {
   conn
     .query_row(
@@ -605,6 +789,40 @@ pub fn settings_set(db: State<AppDb>, key: String, value: String) -> Result<(), 
 #[tauri::command]
 pub fn repo_select(db: State<AppDb>, path: String) -> Result<String, String> {
   db.repo_select(&path)
+}
+
+#[tauri::command]
+pub fn task_create(
+  db: State<AppDb>,
+  title: String,
+  description: Option<String>,
+  acceptance_criteria: Option<String>,
+  priority: Option<i64>,
+  budget: Option<f64>,
+) -> Result<TaskRecord, String> {
+  db.create_task(&title, description.as_deref(), acceptance_criteria.as_deref(), priority.unwrap_or(3), budget)
+}
+
+#[tauri::command]
+pub fn task_get(db: State<AppDb>, id: i64) -> Result<TaskRecord, String> {
+  db.get_task(id)
+}
+
+#[tauri::command]
+pub fn task_list(db: State<AppDb>, agent_id: Option<i64>) -> Result<Vec<TaskRecord>, String> {
+  db.list_tasks(agent_id)
+}
+
+#[tauri::command]
+pub fn task_finalize(
+  db: State<AppDb>,
+  id: i64,
+  column: String,
+  cost: Option<f64>,
+  tokens_in: Option<u64>,
+  tokens_out: Option<u64>,
+) -> Result<TaskRecord, String> {
+  db.finalize_task(id, &column, cost.unwrap_or(0.0), tokens_in.unwrap_or(0), tokens_out.unwrap_or(0))
 }
 
 // ---- Unit testler ------------------------------------------------------------
@@ -861,6 +1079,60 @@ mod tests {
     let result = db.repo_select(repo.to_str().unwrap()).unwrap();
     assert!(result.ends_with("repo"));
     assert_eq!(db.setting_get("repo_path").unwrap(), Some(result));
+  }
+
+  #[test]
+  fn task_create_roundtrip() {
+    let db = open_test_db();
+    let task = db
+      .create_task("JWT ekle", Some("auth akışı"), Some("testler geçer"), 2, Some(0.5))
+      .unwrap();
+    assert!(task.id > 0);
+    assert_eq!(task.title, "JWT ekle");
+    assert_eq!(task.column, "backlog");
+    assert_eq!(task.budget, Some(0.5));
+
+    let fetched = db.get_task(task.id).unwrap();
+    assert_eq!(fetched.title, "JWT ekle");
+
+    let mut p = "  ".to_string();
+    assert!(db.create_task(&p, None, None, 3, None).is_err());
+    p = "geçerli".to_string();
+    assert!(db.create_task(&p, None, None, 3, None).is_ok());
+  }
+
+  #[test]
+  fn task_assign_sets_in_progress_and_blocks_second() {
+    let db = open_test_db();
+    let agent = db.hire(&hire_payload()).unwrap();
+    let task = db.create_task("Görev A", None, None, 3, None).unwrap();
+
+    let assigned = db
+      .assign_task(task.id, agent.id, "/tmp/wt")
+      .expect("atama başarılı");
+    assert_eq!(assigned.column, "in_progress");
+    assert_eq!(assigned.assigned_agent_id, Some(agent.id));
+    assert_eq!(assigned.worktree_path.as_deref(), Some("/tmp/wt"));
+    assert!(assigned.started_at.is_some());
+
+    // Ajan başına tek açık görev.
+    let task2 = db.create_task("Görev B", None, None, 3, None).unwrap();
+    assert!(db.assign_task(task2.id, agent.id, "/tmp/wt2").is_err());
+
+    // Backlog dışındaki göreve atama olmaz.
+    let task3 = db.create_task("Görev C", None, None, 3, None).unwrap();
+    db.finalize_task(task3.id, "done", 0.0, 0, 0).unwrap();
+    assert!(db.assign_task(task3.id, agent.id, "/tmp/wt3").is_err());
+  }
+
+  #[test]
+  fn task_finalize_updates_cost_and_column() {
+    let db = open_test_db();
+    let task = db.create_task("Görev", None, None, 3, None).unwrap();
+    let updated = db.finalize_task(task.id, "review", 1.25, 500, 120).unwrap();
+    assert_eq!(updated.column, "review");
+    assert!((updated.spent_cost - 1.25).abs() < 1e-9);
+    assert!(updated.completed_at.is_some());
   }
 
   #[test]

@@ -37,6 +37,9 @@ pub mod transcript;
 pub struct PtyEvent {
   pub agent_id: String,
   pub execution_id: String,
+  /// Bağlı görev (WP-10) — frontend terminal sekmelerinde kullanılmaz; events için.
+  #[serde(default)]
+  pub task_id: Option<i64>,
   pub kind: PtyEventKind,
 }
 
@@ -62,6 +65,7 @@ pub fn pump_loop(
   mut parser: Box<dyn OutputParser>,
   agent_id: &str,
   execution_id: &str,
+  task_id: Option<i64>,
   mut on_event: impl FnMut(PtyEvent),
 ) -> PumpResult {
   let mut buf = [0u8; 8192];
@@ -86,6 +90,7 @@ pub fn pump_loop(
           on_event(PtyEvent {
             agent_id: agent_id.to_string(),
             execution_id: execution_id.to_string(),
+            task_id,
             kind: PtyEventKind::Signal { signal: sig },
           });
         }
@@ -93,6 +98,7 @@ pub fn pump_loop(
         on_event(PtyEvent {
           agent_id: agent_id.to_string(),
           execution_id: execution_id.to_string(),
+          task_id,
           kind: PtyEventKind::Output {
             data: buf[..n].to_vec(),
           },
@@ -121,6 +127,8 @@ pub fn start_output_pump(
   channel: Channel<PtyEvent>,
   parser: Box<dyn OutputParser>,
   transcript_path: Option<PathBuf>,
+  task_id: Option<i64>,
+  worktree_path: Option<PathBuf>,
 ) {
   // Oturum telemetrisi: pompa bayt sayar, exit olayında events tablosuna yazılır
   // (FAZ0 kabul kriteri 4 — chunk başına DB kaydı yerine kümülatif sayaç).
@@ -136,7 +144,7 @@ pub fn start_output_pump(
     let transcript_path = transcript_path.clone();
 
     thread::spawn(move || {
-      let result = pump_loop(reader, parser, &agent_id, &execution_id, |event| {
+      let result = pump_loop(reader, parser, &agent_id, &execution_id, task_id, |event| {
         if matches!(event.kind, PtyEventKind::Output { .. }) {
           // Bayt sayacı exit telemetrisinde kullanılır.
           if let PtyEventKind::Output { ref data } = event.kind {
@@ -200,6 +208,7 @@ pub fn start_output_pump(
 
       let mut remove = false;
       let mut exit_code: u32 = 0;
+      let mut last_completion: Option<OutputSignal> = None;
 
       if let Ok(mut sessions) = state.sessions.lock() {
         if let Some(session) = sessions.get_mut(&agent_id) {
@@ -211,6 +220,8 @@ pub fn start_output_pump(
           if let Ok(Some(status)) = session.child.try_wait() {
             exit_code = status.exit_code();
             remove = true;
+            // Parser'ın son sinyali (WP-04) — removal öncesi yakala.
+            last_completion = session.last_completion.lock().unwrap().clone();
           }
         } else {
           // Oturum zaten kaldırılmış (agent_stop tarafından).
@@ -223,6 +234,30 @@ pub fn start_output_pump(
       }
 
       if remove {
+        // WP-10: görev tamamlanma algılama (docs 13.2) — dosya > parser > exit kodu.
+        if let Some(tid) = task_id {
+          let (column, reason) = crate::tasks::decide_completion(
+            worktree_path.as_deref(),
+            last_completion.as_ref(),
+            exit_code,
+          );
+          if let Some(db) = app.try_state::<AppDb>() {
+            let _ = db.finalize_task(tid, &column, 0.0, 0, 0);
+            let _ = db.record_event(
+              Some(&agent_id),
+              Some(tid),
+              if column == "review" {
+                "task_completed"
+              } else {
+                "task_failed"
+              },
+              Some(
+                &serde_json::json!({ "reason": reason, "code": exit_code }).to_string(),
+              ),
+            );
+          }
+        }
+
         let event = PtyEvent {
           agent_id: agent_id.clone(),
           execution_id: execution_id.clone(),

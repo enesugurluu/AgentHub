@@ -1,10 +1,11 @@
 import { MaximizeIcon, MinusIcon, PlusIcon, ZoomInIcon } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { TransformComponent, TransformWrapper, useControls } from 'react-zoom-pan-pinch'
 
 import { AgentDesk } from '@/components/OfficeFloor/AgentDesk'
 import { Button } from '@/components/ui/button'
 import { selectVisibleAgents, useAgentStore } from '@/store/agents'
+import { useTasksStore } from '@/store/tasks'
 import { useTerminalStore } from '@/store/terminal'
 
 /** Çalışan masası konumu (docs 5.6 — deterministik grid; M2'de kalıcı konumlar). */
@@ -60,7 +61,13 @@ function ZoomControls() {
 export function OfficeFloor() {
   const { agents, selectedAgentId, selectAgent } = useAgentStore()
   const setActive = useTerminalStore((s) => s.setActive)
+  const fetchTasks = useTasksStore((s) => s.fetchTasks)
   const [hireCta, setHireCta] = useState(false)
+
+  // Aktif görev etiketleri için (WP-10).
+  useEffect(() => {
+    void fetchTasks()
+  }, [fetchTasks])
 
   const visibleAgents = selectVisibleAgents(agents)
 
