@@ -1,8 +1,14 @@
 # Sprint FAZ1-WP08 — Fire Onay Akışı (İşten Çıkarma)
 
 > **Kart:** FAZ1-PLANI.md §5 WP-8 · ADR-1
-> **Takvim:** Hafta 2 · Gün 10 (plan: 2026-08-21) · **Süre:** 4 sa · **Öncelik:** P0
-> **Durum:** ⏳ Planlandı
+> **Takvim:** Hafta 2 · Gün 10 (2026-08-21) · **Süre:** 4 sa · **Öncelik:** P0
+> **Durum:** ✅ Kapandı — UI + store akışı uygulandı; `pnpm check/typecheck/build` yeşil
+>
+> **Uygulama notları (2026-08-10):**
+> - `FireDialog` (AlertDialog): açık görevler → backlog (Switch), worktree sil/koru/commit'le-sakla (radio), log saklama (Switch); aktif oturum uyarısı.
+> - Store `fireAgent` (agentFire + liste + seçim temizleme); InspectorPanel'de `FireButton` + "Görev Ver" placeholder (WP-10).
+> - `Kalıcı Sil` (agent_delete) backend'de hazır; UI yalnızca `fired` kayıtlarda görünür — Inspector görünür ajanlar `fired` içermediği için WP-14'te elle doğrulanır.
+> - `selectVisibleAgents` filtresi Inspector'da da kullanıldı.
 
 ## 1. Hedef
 

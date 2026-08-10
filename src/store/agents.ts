@@ -1,6 +1,13 @@
 import { create } from 'zustand'
 
-import { type AgentRecord, agentHire, type HirePayload, listAgents } from '@/lib/ipc'
+import {
+  type AgentRecord,
+  agentFire,
+  agentHire,
+  type FireOptions,
+  type HirePayload,
+  listAgents,
+} from '@/lib/ipc'
 
 type AgentState = {
   agents: AgentRecord[]
@@ -10,6 +17,8 @@ type AgentState = {
   fetchAgents: () => Promise<void>
   /** İşe alım (Hire Wizard — WP-07): backend kaydı + liste yenileme + seçim. */
   hireAgent: (payload: HirePayload) => Promise<AgentRecord | null>
+  /** İşten çıkarma (FireDialog — WP-08): `fired` + liste yenileme + seçim temizleme. */
+  fireAgent: (id: number, options: FireOptions) => Promise<boolean>
   selectAgent: (id: number | null) => void
 }
 
@@ -45,6 +54,19 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     } catch (e) {
       set({ error: String(e) })
       return null
+    }
+  },
+
+  fireAgent: async (id, options) => {
+    try {
+      await agentFire(id, options)
+      const agents = await listAgents()
+      set({ agents, error: null })
+      if (get().selectedAgentId === id) set({ selectedAgentId: null })
+      return true
+    } catch (e) {
+      set({ error: String(e) })
+      return false
     }
   },
 
