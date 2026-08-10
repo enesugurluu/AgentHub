@@ -1,14 +1,24 @@
-import { MoonIcon, SettingsIcon, SunIcon, WalletIcon } from 'lucide-react'
+import { open } from '@tauri-apps/plugin-dialog'
+import { FolderGit2Icon, MoonIcon, SettingsIcon, SunIcon, WalletIcon } from 'lucide-react'
 import { useEffect } from 'react'
 import { SettingsDialog } from '@/components/SettingsDialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
+import { isTauriRuntime } from '@/lib/ipc'
+import { useProjectsStore } from '@/store/projects'
 import { useSettingsStore } from '@/store/settings'
 
 export function TopBar() {
   const theme = useSettingsStore((s) => s.theme)
   const toggleTheme = useSettingsStore((s) => s.toggleTheme)
+  const repoPath = useProjectsStore((s) => s.repoPath)
+  const loadRepoPath = useProjectsStore((s) => s.loadRepoPath)
+  const selectRepo = useProjectsStore((s) => s.selectRepo)
+
+  useEffect(() => {
+    void loadRepoPath()
+  }, [loadRepoPath])
 
   useEffect(() => {
     const root = document.documentElement
@@ -35,9 +45,28 @@ export function TopBar() {
       <Separator orientation="vertical" className="h-6" />
 
       <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-        <span className="rounded px-2 py-0.5 text-xs font-medium ring-1 ring-border">
-          Proje: repo kökü
-        </span>
+        <button
+          type="button"
+          onClick={async () => {
+            if (!isTauriRuntime()) return
+            const selected = await open({
+              directory: true,
+              multiple: false,
+              title: 'Proje (git repo) seç',
+            })
+            if (typeof selected === 'string') {
+              await selectRepo(selected)
+            }
+          }}
+          title={repoPath ? `Proje: ${repoPath}` : 'Proje seç (henüz seçilmedi)'}
+          className="flex items-center gap-1.5 rounded px-2 py-0.5 text-xs font-medium ring-1 ring-border transition-colors hover:bg-muted/60"
+        >
+          <FolderGit2Icon className="size-3.5" />
+          Proje:{' '}
+          <span className="max-w-48 truncate font-mono">
+            {repoPath ? (repoPath.length > 36 ? `…${repoPath.slice(-36)}` : repoPath) : 'repo kökü'}
+          </span>
+        </button>
       </div>
 
       <div className="ml-auto flex items-center gap-2">

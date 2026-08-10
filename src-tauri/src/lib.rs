@@ -58,6 +58,7 @@ pub fn run() {
       db::agent_list_all,
       db::settings_get,
       db::settings_set,
+      db::repo_select,
       worktree::worktree_create,
       worktree::worktree_remove,
       worktree::worktree_list

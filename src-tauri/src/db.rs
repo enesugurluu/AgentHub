@@ -449,6 +449,33 @@ impl AppDb {
     Ok(())
   }
 
+  /// Repo yolu seçimi (docs 5.1 "Proje" çipi; WP-06): canonicalize + `.git`
+  /// doğrulaması + worktree kökü reddi + `settings.repo_path`'e yazma.
+  pub fn repo_select(&self, path: &str) -> Result<String, String> {
+    let raw = PathBuf::from(path);
+    let canonical = raw
+      .canonicalize()
+      .map_err(|e| format!("yol doğrulanamadı: {e}"))?;
+
+    // Worktree kökü reddi: kullanıcı .git/agenthub-worktrees içini seçmesin.
+    let canonical_str = canonical.to_string_lossy().to_string();
+    if canonical_str.contains(".git/agenthub-worktrees") {
+      return Err("worktree kökü seçilemez — ana repoyu seçin".to_string());
+    }
+
+    // .git dizin (ana repo) veya dosya (linked worktree) olabilir; en az biri şart.
+    let git_path = canonical.join(".git");
+    if !git_path.exists() {
+      return Err(format!(
+        "'{}' bir git deposu değil (.git bulunamadı)",
+        canonical.display()
+      ));
+    }
+
+    self.setting_set("repo_path", &canonical_str)?;
+    Ok(canonical_str)
+  }
+
   /// Denetim/olay kaydı (spawn, exit, hire, fire, stopped, ...).
   ///
   /// Frontend ajan id'lerini string taşır ("1", "2", ...). Sayısal olmayan bir
@@ -573,6 +600,11 @@ pub fn settings_get(db: State<AppDb>, key: String) -> Result<Option<String>, Str
 #[tauri::command]
 pub fn settings_set(db: State<AppDb>, key: String, value: String) -> Result<(), String> {
   db.setting_set(&key, &value)
+}
+
+#[tauri::command]
+pub fn repo_select(db: State<AppDb>, path: String) -> Result<String, String> {
+  db.repo_select(&path)
 }
 
 // ---- Unit testler ------------------------------------------------------------
@@ -807,5 +839,46 @@ mod tests {
       )
       .unwrap();
     assert!(agent_id.is_none());
+  }
+
+  fn init_git_repo(dir: &std::path::Path) {
+    let output = std::process::Command::new("git")
+      .arg("init")
+      .current_dir(dir)
+      .output()
+      .expect("git init çalışmalı");
+    assert!(output.status.success(), "git init başarısız");
+  }
+
+  #[test]
+  fn repo_select_validates_and_persists() {
+    let db = open_test_db();
+    let dir = tempdir().unwrap();
+    let repo = dir.path().join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    init_git_repo(&repo);
+
+    let result = db.repo_select(repo.to_str().unwrap()).unwrap();
+    assert!(result.ends_with("repo"));
+    assert_eq!(db.setting_get("repo_path").unwrap(), Some(result));
+  }
+
+  #[test]
+  fn repo_select_rejects_non_git_and_worktree_root() {
+    let db = open_test_db();
+    let dir = tempdir().unwrap();
+
+    // Git olmayan dizin → Err.
+    let plain = dir.path().join("plain");
+    std::fs::create_dir_all(&plain).unwrap();
+    assert!(db.repo_select(plain.to_str().unwrap()).is_err());
+
+    // Worktree kökü (.git/agenthub-worktrees içi) → Err.
+    let repo = dir.path().join("repo2");
+    std::fs::create_dir_all(&repo).unwrap();
+    init_git_repo(&repo);
+    let wts = repo.join(".git/agenthub-worktrees/ornek");
+    std::fs::create_dir_all(&wts).unwrap();
+    assert!(db.repo_select(wts.to_str().unwrap()).is_err());
   }
 }

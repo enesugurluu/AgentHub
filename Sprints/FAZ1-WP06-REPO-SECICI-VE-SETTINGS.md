@@ -1,8 +1,14 @@
 # Sprint FAZ1-WP06 — Repo Seçici ve Settings Kalıcılığı
 
 > **Kart:** FAZ1-PLANI.md §5 WP-6 · ADR-7
-> **Takvim:** Hafta 1 · Gün 2 (plan: 2026-08-11) · **Süre:** 4 sa · **Öncelik:** P0
-> **Durum:** ⏳ Planlandı
+> **Takvim:** Hafta 1 · Gün 2 (2026-08-11) · **Süre:** 4 sa · **Öncelik:** P0
+> **Durum:** ✅ Kapandı — backend + frontend uygulandı; `cargo test` doğrulaması CI/kullanıcı makinesinde (WP-14'te nihai)
+>
+> **Uygulama notları (2026-08-10):**
+> - `db::repo_select` komutu: canonicalize + `.git` doğrulaması + worktree kökü reddi + `settings.repo_path` yazma; 2 unit test.
+> - `resolve_repo_root(&app)` önceliği: `settings.repo_path` → `AGENTHUB_REPO_PATH` env → cwd (ADR-7).
+> - `@tauri-apps/plugin-dialog` npm paketi eklendi (Rust tarafı FAZ0'da vardı); capability `dialog:default` yeterli.
+> - `src/store/projects.ts` (repoPath + onboardingSkipped) · TopBar proje çipi dialog açıyor · `OnboardingDialog` (seç/atla).
 
 ## 1. Hedef
 

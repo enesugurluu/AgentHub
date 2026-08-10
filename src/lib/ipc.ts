@@ -255,6 +255,14 @@ export function settingsSet(key: string, value: string): Promise<void> {
   return invoke('settings_set', { key, value })
 }
 
+/**
+ * Repo yolu seçimi (WP-06): canonicalize + `.git` doğrulaması + worktree kökü
+ * reddi; başarılıysa `settings.repo_path`'e yazılır ve canonical yol döner.
+ */
+export function repoSelect(path: string): Promise<string> {
+  return invoke<string>('repo_select', { path })
+}
+
 export function worktreeCreate(args: {
   repoPath: string
   agentId: string

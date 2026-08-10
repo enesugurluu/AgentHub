@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { AgentSidebar } from '@/components/AgentSidebar'
 import { InspectorPanel } from '@/components/InspectorPanel'
 import { OfficeFloor } from '@/components/OfficeFloor'
+import { OnboardingDialog } from '@/components/OnboardingDialog'
 import { TerminalTabs } from '@/components/TerminalTabs'
 import { TopBar } from '@/components/TopBar'
 import { useAgentStore } from '@/store/agents'
@@ -23,6 +24,7 @@ function App() {
         <InspectorPanel />
       </main>
       <TerminalTabs />
+      <OnboardingDialog />
     </div>
   )
 }

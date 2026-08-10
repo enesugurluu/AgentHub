@@ -9,6 +9,16 @@
 - **Yeni komutlar:** `agent_spawn_engine` (engine_type bazlı), `pty_resize` (xterm fit → PTY boyutu), `pty_adapter_metadata` (id → metadata), `agent_list_all` (DB).
 - `main.rs` → `lib.rs` + `run()` (Tauri 2 konvansiyonu).
 
+## FAZ1 WP-06 eklemeleri (2026-08)
+
+- **`db::repo_select`** — repo yolu seçimi: canonicalize + `.git` doğrulaması + worktree kökü
+  reddi (`.git/agenthub-worktrees` içi) + `settings.repo_path`'e yazma.
+- **`resolve_repo_root(&app)`** (pty/mod.rs) — öncelik: `settings.repo_path` → `AGENTHUB_REPO_PATH`
+  env (dev köprüsü) → cwd (son çare). WP-05 worktree otomasyonu bu kaynağı kullanır.
+- **Frontend:** `@tauri-apps/plugin-dialog` eklendi (Rust plugin FAZ0'da vardı; capability
+  `dialog:default` yeterli). `src/store/projects.ts` (repoPath + onboardingSkipped),
+  TopBar proje çipi → dialog → `repo_select`, `src/components/OnboardingDialog.tsx`.
+
 ## FAZ1 WP-03 eklemeleri (2026-08)
 
 - **`agents/{codex,gemini,opencode,aider}.rs`** — yeni CLI adaptörleri (docs Bölüm 7.2). Hepsi

@@ -24,20 +24,32 @@ pub mod registry;
 pub mod runtime;
 pub mod worktree;
 
-/// Repo kökünü çözer. Öncelik bilinçli override'a (`AGENTHUB_REPO_PATH` env)
-/// verilir; aksi halde uygulama sürecinin çalışma dizini kullanılır
-/// (FAZ0 basit davranışı; dialog ile repo seçimi FAZ1'de).
-fn resolve_repo_root() -> String {
+/// Repo kökünü çözer (ADR-7; WP-06). Öncelik:
+/// 1. `settings.repo_path` (dialog ile seçilmiş, doğrulanmış — asıl akış)
+/// 2. `AGENTHUB_REPO_PATH` env (dev köprüsü — FAZ0 davranışı korunur)
+/// 3. uygulama sürecinin çalışma dizini (son çare; paketli çalıştırmada uyarı)
+fn resolve_repo_root(app: &AppHandle) -> String {
+  if let Some(db) = app.try_state::<AppDb>() {
+    if let Ok(Some(repo)) = db.setting_get("repo_path") {
+      if !repo.trim().is_empty() {
+        return repo;
+      }
+    }
+  }
   if let Ok(raw) = std::env::var("AGENTHUB_REPO_PATH") {
     let trimmed = raw.trim();
     if !trimmed.is_empty() {
       return trimmed.to_string();
     }
   }
-  std::env::current_dir()
+  let cwd = std::env::current_dir()
     .unwrap_or_default()
     .to_string_lossy()
-    .to_string()
+    .to_string();
+  if cwd.is_empty() {
+    tracing::warn!("repo_path ayarlanmamış — lütfen Ayarlar'dan bir proje seçin");
+  }
+  cwd
 }
 
 /// Oturum zaten açıksa spawn'dan ÖNCE hata ver — aksi halde register hatasında
@@ -156,7 +168,7 @@ pub fn agent_spawn(
   ensure_not_running(&manager, &agent_id)?;
 
   // Worktree güvenli şekilde backend'de çözülür; frontend'e güvenilmez.
-  let repo_path = resolve_repo_root();
+  let repo_path = resolve_repo_root(&app);
   let worktree_path = resolve_agent_workdir(&repo_path, &agent_id);
 
   let envs = agent_envs(&agent_id, &worktree_path);
@@ -288,7 +300,7 @@ pub fn agent_spawn_engine(
     .ok_or_else(|| format!("no adapter registered for engine type '{engine_type}'"))?;
   let adapter_id = adapter.id().to_string();
 
-  let repo_path = resolve_repo_root();
+  let repo_path = resolve_repo_root(&app);
   let worktree_path = resolve_agent_workdir(&repo_path, &agent_id);
 
   // Frontend workdir/env göndermemişse backend tamamlar.
