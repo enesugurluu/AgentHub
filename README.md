@@ -6,9 +6,10 @@ AjanOfis (AjanŞirket) vizyonunun Tauri 2 masaüstü uygulaması — çoklu AI C
 (Claude Code, ileride Codex/Gemini/OpenCode...) izole git worktree'lerinde yöneten
 bir "ajan şirketi" yönetim paneli.
 
-> **Durum: FAZ0 ✅** — iskelet + PTY motoru + Claude Code adaptörü + SQLite + terminal UI.
-> FAZ0 durum analizi: [`FAZ0-DURUM-ANALIZI-VE-UYGULAMA-PLANI.md`](./FAZ0-DURUM-ANALIZI-VE-UYGULAMA-PLANI.md)
-> Sıradaki: **FAZ1 (M1)** — çoklu motor, worktree otomasyonu, işe alım: [`FAZ1-PLANI.md`](./FAZ1-PLANI.md)
+> **Durum: FAZ1 (M1) 🚧** — çoklu motor (5 CLI adaptörü), worktree otomasyonu, işe alım/çıkarma,
+> görev protokolü, JSONL kayıt ve ofis katı uygulandı (kod + frontend yeşil; Rust doğrulaması CI/kullanıcı makinesinde).
+> Planlar: [`FAZ1-PLANI.md`](./FAZ1-PLANI.md) · Sprintler: [`Sprints/`](./Sprints/00-INDEX.md) ·
+> Kapanış: [`FAZ1-KAPANIS-DENETIMI.md`](./FAZ1-KAPANIS-DENETIMI.md)
 
 ## Teknoloji Yığını
 
@@ -71,7 +72,7 @@ izole worktree'lerde çalışır.
 ## Yol Haritası
 
 - ✅ **FAZ0** — iskelet, PTY + adaptör registry, worktree, Claude adaptörü, SQLite, terminal UI
-- ⏳ **FAZ1 (M1)** — Codex/Gemini/OpenCode/Aider adaptörleri, işe alım sihirbazı, worktree otomasyonu, ofis katı SVG — [plan](./FAZ1-PLANI.md)
+- 🚧 **FAZ1 (M1)** — 5 CLI adaptörü, worktree otomasyonu, işe alım/çıkarma, görev protokolü, JSONL kayıt, ofis katı SVG — [plan](./FAZ1-PLANI.md)
 - ⏳ **Faz 3 (M2)** — Kanban, CEO orkestrasyonu, onay akışı + policy engine, maliyet takibi
 - ⏳ **Faz 4 (M3)** — Bilgi grafı (SQLite + FTS5 + sqlite-vec), Sigma.js, yerel embedding
 - ⏳ **Faz 5 (M4)** — MCP Hub (`rmcp`), toplantı odası, paketleme + auto-updater

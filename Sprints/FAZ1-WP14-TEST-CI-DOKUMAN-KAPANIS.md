@@ -1,8 +1,17 @@
 # Sprint FAZ1-WP14 — Test/CI/Dokümantasyon ve Kapanış Denetimi
 
 > **Kart:** FAZ1-PLANI.md §5 WP-14 · ADR-3, ADR-9
-> **Takvim:** Hafta 3 · Gün 17–18 (plan: 2026-08-27 → 2026-08-28) · **Süre:** 6 sa · **Öncelik:** P0
-> **Durum:** ⏳ Planlandı
+> **Takvim:** Hafta 3 · Gün 17–18 (2026-08-27 → 2026-08-28) · **Süre:** 6 sa · **Öncelik:** P0
+> **Durum:** ✅ Kapandı — `FAZ1-KAPANIS-DENETIMI.md` + dokümanlar + indeks güncellendi;
+> elle senaryo listesi kullanıcı makinesinde koşulacak (raporda ⏳)
+>
+> **Uygulama notları (2026-08-10):**
+> - `FAZ1-KAPANIS-DENETIMI.md` oluşturuldu: 12 kriter tablosu, sprint özeti, 12 maddelik elle
+>   senaryo listesi, bilinçli ertelemeler (M2 backlog), sapmalar ve nedenleri.
+> - README durum "FAZ1 (M1) 🚧" + plan/sprint/kapanış bağlantıları; DEVELOPERS.md FAZ1 özeti eklendi.
+> - Mock-CLI matrisi `agents::test_util::with_fake_binary` altında konsolide (Unix gerçek, Windows no-op).
+> - CI: yeni bağımlılıklar lock'ta (`react-zoom-pan-pinch`, `@tauri-apps/plugin-dialog`, 6 Radix);
+>   `cargo test --locked` CI'da; elle senaryolar kullanıcı makinesinde.
 
 ## 1. Hedef
 

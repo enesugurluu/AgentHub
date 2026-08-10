@@ -9,6 +9,30 @@
 - **Yeni komutlar:** `agent_spawn_engine` (engine_type bazlı), `pty_resize` (xterm fit → PTY boyutu), `pty_adapter_metadata` (id → metadata), `agent_list_all` (DB).
 - `main.rs` → `lib.rs` + `run()` (Tauri 2 konvansiyonu).
 
+## FAZ1 WP-04/05/07…13 eklemeleri (2026-08) — kısa özet
+
+- **WP-04 `pty/runtime/parser.rs`** — `OutputParser` trait + `OutputSignal`
+  (Progress/ApprovalRequested/TaskCompleted/TaskFailed) + satır tamponlu 3 parser
+  (claude stream-json, opencode jsonl, regex) + `select_parser(engine_type, non_interactive)`.
+  `PtyEventKind::Signal { signal }`; `pump_loop` Channel'dan bağımsız (test edilebilir).
+- **WP-05 `worktree.rs`** — `ensure_agent_worktree` (idempotent, `agent/<slug>-<suffix>`),
+  `prepare_worktree_env` (`.env.local` port offset, mevcut anahtarlar korunur),
+  `link_node_modules` (Unix symlink / Win junction, best-effort),
+  `worktree_remove(path, options)` (delete|keep|commit_and_keep), `worktree_for_agent`.
+- **WP-07** — `pty_adapter_detect_info` komutu; `src/hooks/useEngineRegistry.ts`;
+  `src/lib/presets.ts` (docs 6.3); `HireWizard.tsx` (3 adım).
+- **WP-10 `tasks.rs`** — `write_agent_task` (AGENT_TASK.md şablonu) + `decide_completion`
+  (TASK_BLOCKED.md > TASK_COMPLETE.md > parser sinyali > exit kodu). `task_assign` komutu:
+  ensure worktree → AGENT_TASK.md → non-interactive spawn; oturum `task_id`/`worktree_path`
+  etiketli; exit'te `finalize_task` + `task_completed/failed` olayı.
+- **WP-11 `pty/runtime/transcript.rs`** — JSONL kayıt (`~/.agentcompany/logs/<slug>/`),
+  `transcript_append_session_buffer`. Not: chrono/dirs yok — epoch + HOME/USERPROFILE (CI `--locked`).
+- **WP-12** — Settings "Motorlar" kartları + kurulum: `agentId = "install-<engine>"` oturumu;
+  `PtyTerminal` `install-*`'da otomatik `agentInstallEngine` (ref-guard, tek sefer).
+- **WP-13** — `EngineAdapter::supports(feature)` (capability listesi); desteklenmeyen
+  budget/turns/effort için `tracing::warn!`; pump `Progress.cost` birikimi → exit payload
+  + JSONL `totalCostUsd`; frontend `totalCostUsd` + TopBar CostMeter.
+
 ## FAZ1 WP-06 eklemeleri (2026-08)
 
 - **`db::repo_select`** — repo yolu seçimi: canonicalize + `.git` doğrulaması + worktree kökü

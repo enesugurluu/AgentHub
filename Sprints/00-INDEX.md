@@ -30,7 +30,7 @@ talimatlar, test planı, doğrulama komutları, riskler ve devir notlarını ta�
 | [FAZ1-WP11](./FAZ1-WP11-JSONL-VE-SERIALIZE.md) | 11 | JSONL oturum kaydı + serialize | 4 sa | P1 | WP-04 | ✅ transcript.rs + pump/input/exit kayıtları + SerializeAddon buffer persist |
 | [FAZ1-WP12](./FAZ1-WP12-SAGLIK-PANELI-VE-KURULUM.md) | 12 | Sağlık paneli + kurulum akışı | 4 sa | P1 | WP-03 | ✅ Motor kartları + onaylı kurulum terminal sekmesinde |
 | [FAZ1-WP13](./FAZ1-WP13-BUTCE-VE-COST-TELEMETRI.md) | 13 | Bütçe/effort aktarımı + cost telemetri | 4 sa | P1 | WP-02, WP-04, WP-07 | ✅ supports()+warn; totalCostUsd; CostMeter ≈$ |
-| [FAZ1-WP14](./FAZ1-WP14-TEST-CI-DOKUMAN-KAPANIS.md) | 14 | Test/CI/doküman + kapanış denetimi | 6 sa | P0 | Hepsi | CI 3 OS yeşil; kapanış raporu |
+| [FAZ1-WP14](./FAZ1-WP14-TEST-CI-DOKUMAN-KAPANIS.md) | 14 | Test/CI/doküman + kapanış denetimi | 6 sa | P0 | Hepsi | ✅ FAZ1-KAPANIS-DENETIMI.md + dokümanlar; elle senaryolar kullanıcı makinesinde |
 
 ## Sprint Yürütme Kuralları
 
