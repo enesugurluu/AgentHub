@@ -9,6 +9,7 @@ use uuid::Uuid;
 #[serde(rename_all = "camelCase")]
 pub struct WorktreeInfo {
     pub path: String,
+    #[serde(default)]
     pub agent_id: String,
     pub agent_name: String,
     pub branch_name: String,
