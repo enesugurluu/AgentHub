@@ -84,6 +84,10 @@ impl EngineAdapter for ClaudeAdapter {
 
   fn health_report(&self) -> HealthReport {
     let res = self.health();
+    // `ok`/`message` önce ayrıştırılır; böylece `res.err()` değeri tüketmeden
+    // sonra `res.is_ok()` çağrılmaz (E0382 borrow-of-moved-value).
+    let ok = res.is_ok();
+    let message = res.err();
 
     // Sistemsel kaynak kullanımı (sysinfo — AjanOfis docs Bölüm 3.3).
     let mut sys = sysinfo::System::new();
@@ -91,15 +95,15 @@ impl EngineAdapter for ClaudeAdapter {
     sys.refresh_memory();
 
     HealthReport {
-      ok: res.is_ok(),
-      message: res.err(),
+      ok,
+      message,
       uptime: None,
       resource_utilization: Some(ResourceUtil {
         cpu_percent: Some(sys.global_cpu_usage()),
         memory_bytes: Some(sys.used_memory()),
         process_count: None,
       }),
-      operational_status: if res.is_ok() {
+      operational_status: if ok {
         "operational".to_string()
       } else {
         "degraded".to_string()

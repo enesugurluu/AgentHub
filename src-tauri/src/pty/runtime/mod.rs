@@ -29,7 +29,7 @@ pub struct PtyEvent {
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum PtyEventKind {
   Output { data: Vec<u8> },
-  Exit { code: Option<i32> },
+  Exit { code: u32 },
 }
 
 pub fn start_output_pump(
@@ -77,14 +77,14 @@ pub fn start_output_pump(
       let state: State<PtyManager> = app.state();
 
       let mut remove = false;
-      let mut exit_code: Option<i32> = None;
+      let mut exit_code: u32 = 0;
 
       if let Ok(mut sessions) = state.sessions.lock() {
         if let Some(session) = sessions.get_mut(&agent_id) {
           if session.execution_id == execution_id {
             // Mutable erişimle child durumunu kontrol et.
             if let Ok(Some(status)) = session.child.try_wait() {
-              exit_code = status.code();
+              exit_code = status.exit_code();
               remove = true;
             }
           } else {
@@ -109,7 +109,7 @@ pub fn start_output_pump(
         };
         let _ = channel.send(event);
 
-        if let Ok(db) = app.try_state::<AppDb>() {
+        if let Some(db) = app.try_state::<AppDb>() {
           let payload = serde_json::json!({ "executionId": execution_id, "code": exit_code });
           let _ = db.record_event(
             Some(&agent_id),

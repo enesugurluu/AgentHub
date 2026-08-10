@@ -12,6 +12,7 @@ pub struct PtyManager {
 pub struct PtySession {
   pub adapter_id: String,
   pub execution_id: String,
+  pub master: Box<dyn portable_pty::MasterPty + Send>,
   pub writer: Box<dyn Write + Send>,
   pub child: Box<dyn portable_pty::Child + Send + Sync>,
   #[cfg(target_os = "windows")]

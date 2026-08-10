@@ -112,13 +112,16 @@ pub trait EngineAdapter: Send + Sync + 'static {
   }
 
   /// PTY boyutunu günceller (xterm fit → `pty_resize` IPC).
+  ///
+  /// portable-pty 0.9'da resize `Child` üzerinde değil, PTY'nin **master**
+  /// ucunda (`MasterPty::resize`) gerçekleşir.
   fn resize(
     &self,
-    child: &mut (dyn portable_pty::Child + Send + Sync),
+    master: &dyn portable_pty::MasterPty,
     cols: u16,
     rows: u16,
   ) -> Result<(), String> {
-    child
+    master
       .resize(portable_pty::PtySize {
         rows,
         cols,
@@ -134,6 +137,7 @@ pub trait EngineAdapter: Send + Sync + 'static {
 pub struct SpawnedPty {
   pub reader: Box<dyn Read + Send>,
   pub writer: Box<dyn Write + Send>,
+  pub master: Box<dyn portable_pty::MasterPty + Send>,
   pub child: Box<dyn portable_pty::Child + Send + Sync>,
   #[cfg(target_os = "windows")]
   pub job_handle: Option<isize>,
@@ -159,7 +163,19 @@ pub(crate) fn spawn_pty_isolated(
     })
     .map_err(|e| e.to_string())?;
 
-  let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+  let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+
+  // Windows'ta Job Object handle'ı struct kurulumunda (aşağıda) kullanıldığı
+  // için bildirim `#[cfg]` bloğunun DIŞINDA tutulur; değer ataması yalnızca
+  // Windows'ta yapılır.
+  #[allow(unused_mut)]
+  let mut final_job_handle: Option<isize> = None;
+
+  #[cfg(not(target_os = "windows"))]
+  {
+    // Windows dışında değer atanmaz; uyarıyı bastırmak için kullanıldığını işaretle.
+    let _ = &final_job_handle;
+  }
 
   #[cfg(target_os = "windows")]
   {
@@ -173,8 +189,6 @@ pub(crate) fn spawn_pty_isolated(
     use windows_sys::Win32::System::Threading::{
       OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
     };
-
-    let mut final_job_handle: Option<isize> = None;
 
     if let Some(pid) = child.process_id() {
       unsafe {
@@ -231,6 +245,7 @@ pub(crate) fn spawn_pty_isolated(
   Ok(SpawnedPty {
     reader,
     writer,
+    master: pair.master,
     child,
     #[cfg(target_os = "windows")]
     job_handle: final_job_handle,

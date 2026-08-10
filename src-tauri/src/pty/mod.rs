@@ -1,10 +1,9 @@
 use serde::Serialize;
 use tauri::ipc::Channel;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
 
 use self::{
-  adapters::EngineAdapter,
   registry::{EngineAdapterQuery, EngineAdapterRegistry, PtyManager, PtySession},
   runtime::{start_output_pump, PtyEvent},
   worktree::build_command,
@@ -226,6 +225,7 @@ fn register_session(
         adapter_id: adapter_id.to_string(),
         execution_id: execution_id_owned.clone(),
         writer: spawned.writer,
+        master: spawned.master,
         child: spawned.child,
         #[cfg(target_os = "windows")]
         job_handle: spawned.job_handle,
@@ -233,7 +233,7 @@ fn register_session(
     );
   }
 
-  if let Ok(db) = app.try_state::<AppDb>() {
+  if let Some(db) = app.try_state::<AppDb>() {
     let payload = serde_json::json!({ "executionId": execution_id, "adapter": adapter_id });
     let _ = db.record_event(Some(&id), None, event_type, Some(&payload.to_string()));
   }
@@ -300,11 +300,11 @@ pub fn pty_resize(
   }
 
   if let Some(adapter) = adapters.get(&session.adapter_id)? {
-    adapter.resize(session.child.as_mut(), cols, rows)
+    adapter.resize(session.master.as_ref(), cols, rows)
   } else {
     // Sessions can outlive adapter registrations during development.
     session
-      .child
+      .master
       .resize(portable_pty::PtySize {
         rows,
         cols,
@@ -347,7 +347,7 @@ pub fn agent_stop(
       let _ = session.child.wait();
     }
 
-    if let Ok(db) = app.try_state::<AppDb>() {
+    if let Some(db) = app.try_state::<AppDb>() {
       let _ = db.record_event(Some(&agent_id), None, "stopped", None);
     }
   }
