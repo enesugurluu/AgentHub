@@ -1,8 +1,17 @@
 # Sprint FAZ1-WP04 — OutputParser İskeleti ve Progress Event
 
 > **Kart:** FAZ1-PLANI.md §5 WP-4 · ADR-4
-> **Takvim:** Hafta 3 · Gün 13–14 (plan: 2026-08-24 → 2026-08-25) · **Süre:** 8 sa · **Öncelik:** P1
-> **Durum:** ⏳ Planlandı
+> **Takvim:** Hafta 3 · Gün 13–14 (2026-08-24 → 2026-08-25) · **Süre:** 8 sa · **Öncelik:** P1
+> **Durum:** ✅ Kapandı — kod + fixture testler yazıldı; `cargo test` doğrulaması CI/kullanıcı makinesinde
+>
+> **Uygulama notları (2026-08-10):**
+> - `pty/runtime/parser.rs`: `OutputParser` trait + `OutputSignal` + satır tamponlu 3 parser
+>   (ClaudeStreamJsonParser, OpencodeJsonlParser, RegexProgressParser) + `select_parser`.
+> - `PtyEventKind::Signal { signal }` eklendi (iç içe tag çakışmasını önlemek için newtype yerine struct varyant).
+> - `pump_loop(reader, parser, agent_id, execution_id, on_event) -> PumpResult` — Channel'dan bağımsız, unit test edilebilir.
+> - `start_output_pump` parser parametresi aldı; son TaskCompleted/Failed `PtySession.last_completion`'a yazılır (WP-10 finalize).
+> - `register_session` engine_type + non_interactive alıyor; `agent_spawn_engine`'de `opts.non_interactive` spawn öncesi yakalanıyor.
+> - Fixture testleri: usage/result, kısmi chunk, opencode cost/completed, regex progress/approval, pump forwarding, tür kontrolü (7 test).
 
 ## 1. Hedef
 

@@ -127,6 +127,14 @@ export type PtyEventKind =
   | { type: 'output'; data: number[] }
   // portable-pty 0.9: ExitStatus::exit_code() her zaman u32 döner (Option değil).
   | { type: 'exit'; code: number }
+  // Parser sinyali (WP-04): progress / approval_requested / task_completed / task_failed
+  | { type: 'signal'; signal: OutputSignal }
+
+export type OutputSignal =
+  | { type: 'progress'; turn: number; cost: number; tokensIn: number; tokensOut: number }
+  | { type: 'approvalRequested'; pattern: string }
+  | { type: 'taskCompleted'; summary: string }
+  | { type: 'taskFailed'; reason: string }
 
 /** Frontend tarafında oluşturulup invoke argümanı olarak backend'e verilir. */
 export function createPtyChannel(onEvent: (event: PtyEvent) => void): Channel<PtyEvent> {

@@ -3,6 +3,8 @@
 //! - Çıktı, per-session `Channel<PtyEvent>` üzerinden **ham bayt** olarak akar
 //!   (UTF-8 çok baytlı karakterlerin chunk sınırında bozulmasını önler;
 //!   xterm `Uint8Array`'i doğrudan işler).
+//! - Çıktı aynı anda `OutputParser`'a beslenir (WP-04): `Signal` olayları
+//!   (Progress / ApprovalRequested / TaskCompleted / TaskFailed) kanala akar.
 //! - Çıkış, `Exit { code }` olayı ile frontend'e bildirilir ve `events`
 //!   tablosuna yazılır.
 
@@ -18,8 +20,11 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::db::AppDb;
 use crate::pty::registry::PtyManager;
+use crate::pty::runtime::parser::{OutputParser, OutputSignal};
 
-/// Frontend'e giden PTY olayı (serde tag'i: `kind.type = "output" | "exit"`).
+pub mod parser;
+
+/// Frontend'e giden PTY olayı (serde tag'i: `kind.type = "output" | "exit" | "signal"`).
 ///
 /// NOT: Channel payload'ları serde ile birebir serialize edilir; Tauri alan
 /// adlarını dönüştürmez. Frontend `agentId`/`executionId` beklediği için
@@ -37,46 +42,116 @@ pub struct PtyEvent {
 pub enum PtyEventKind {
   Output { data: Vec<u8> },
   Exit { code: u32 },
+  /// Parser sinyali (WP-04): `{ type: "signal", signal: { type: "progress", ... } }`
+  Signal { signal: OutputSignal },
 }
 
+/// `pump_loop` sonucu — telemetri + WP-10 tamamlanma algılaması için son sinyal.
+pub struct PumpResult {
+  pub output_bytes: u64,
+  pub last_completion: Option<OutputSignal>,
+}
+
+/// Okuyucudan gelen ham baytları parser'a besleyip `on_event`'e olay olarak
+/// iletir. Tauri Channel'ına bağımlı DEĞİLDİR — unit test `on_event`'i yakalar.
+pub fn pump_loop(
+  mut reader: Box<dyn Read + Send>,
+  mut parser: Box<dyn OutputParser>,
+  agent_id: &str,
+  execution_id: &str,
+  mut on_event: impl FnMut(PtyEvent),
+) -> PumpResult {
+  let mut buf = [0u8; 8192];
+  let mut output_bytes: u64 = 0;
+  let mut last_completion: Option<OutputSignal> = None;
+
+  loop {
+    match reader.read(&mut buf) {
+      Ok(0) => break,
+      Ok(n) => {
+        output_bytes += n as u64;
+
+        let mut signals = Vec::new();
+        parser.feed(&buf[..n], &mut signals);
+        for sig in signals {
+          if matches!(
+            sig,
+            OutputSignal::TaskCompleted { .. } | OutputSignal::TaskFailed { .. }
+          ) {
+            last_completion = Some(sig.clone());
+          }
+          on_event(PtyEvent {
+            agent_id: agent_id.to_string(),
+            execution_id: execution_id.to_string(),
+            kind: PtyEventKind::Signal { signal: sig },
+          });
+        }
+
+        on_event(PtyEvent {
+          agent_id: agent_id.to_string(),
+          execution_id: execution_id.to_string(),
+          kind: PtyEventKind::Output {
+            data: buf[..n].to_vec(),
+          },
+        });
+      }
+      Err(_) => break,
+    }
+  }
+
+  PumpResult {
+    output_bytes,
+    last_completion,
+  }
+}
+
+/// Oturum başına çıktı pompası + yaşam döngüsü monitörü.
+///
+/// `parser` motor/moda göre `select_parser` ile seçilir (WP-04); son
+/// TaskCompleted/Failed sinyali oturumda saklanır (WP-10 finalize).
 pub fn start_output_pump(
   app: AppHandle,
   agent_id: String,
   execution_id: String,
-  mut reader: Box<dyn Read + Send>,
+  reader: Box<dyn Read + Send>,
   channel: Channel<PtyEvent>,
+  parser: Box<dyn OutputParser>,
 ) {
   // Oturum telemetrisi: pompa bayt sayar, exit olayında events tablosuna yazılır
   // (FAZ0 kabul kriteri 4 — chunk başına DB kaydı yerine kümülatif sayaç).
   let output_bytes = Arc::new(AtomicU64::new(0));
 
-  // -- Çıktı pompası: reader → Channel (ham bayt) ------------------------------
+  // -- Çıktı pompası: reader → parser + Channel ---------------------------------
   {
+    let app = app.clone();
     let agent_id = agent_id.clone();
     let execution_id = execution_id.clone();
     let channel = channel.clone();
     let output_bytes = output_bytes.clone();
 
     thread::spawn(move || {
-      let mut buf = [0u8; 8192];
-      loop {
-        match reader.read(&mut buf) {
-          Ok(0) => break,
-          Ok(n) => {
-            output_bytes.fetch_add(n as u64, Ordering::Relaxed);
-            let event = PtyEvent {
-              agent_id: agent_id.clone(),
-              execution_id: execution_id.clone(),
-              kind: PtyEventKind::Output {
-                data: buf[..n].to_vec(),
-              },
-            };
-            if channel.send(event).is_err() {
-              // Frontend kanalı kapandıysa (pencere/sekme kapatıldı) pompayı bitir.
-              break;
+      let result = pump_loop(reader, parser, &agent_id, &execution_id, |event| {
+        if matches!(event.kind, PtyEventKind::Output { .. }) {
+          // Bayt sayacı exit telemetrisinde kullanılır.
+          if let PtyEventKind::Output { ref data } = event.kind {
+            output_bytes.fetch_add(data.len() as u64, Ordering::Relaxed);
+          }
+        }
+        if channel.send(event).is_err() {
+          // Frontend kanalı kapandıysa (pencere/sekme kapatıldı) dur.
+          return;
+        }
+      });
+
+      // WP-10 tamamlanma algılaması: son TaskCompleted/Failed sinyalini oturuma yaz.
+      if let Some(sig) = result.last_completion {
+        let state: State<PtyManager> = app.state();
+        if let Ok(mut sessions) = state.sessions.lock() {
+          if let Some(session) = sessions.get_mut(&agent_id) {
+            if session.execution_id == execution_id {
+              *session.last_completion.lock().unwrap() = Some(sig);
             }
           }
-          Err(_) => break,
         }
       }
     });
@@ -139,4 +214,93 @@ pub fn start_output_pump(
       }
     }
   });
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::pty::runtime::parser::{ClaudeStreamJsonParser, RegexProgressParser};
+
+  struct FakeReader {
+    chunks: Vec<Vec<u8>>,
+  }
+
+  impl Read for FakeReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+      if self.chunks.is_empty() {
+        return Ok(0);
+      }
+      let chunk = self.chunks.remove(0);
+      let n = chunk.len().min(buf.len());
+      buf[..n].copy_from_slice(&chunk[..n]);
+      if n < chunk.len() {
+        self.chunks.insert(0, chunk[n..].to_vec());
+      }
+      Ok(n)
+    }
+  }
+
+  #[test]
+  fn pump_loop_forwards_output_and_progress() {
+    let reader = Box::new(FakeReader {
+      chunks: vec![
+        b"selam\n".to_vec(),
+        b"{\"type\":\"system\",\"subtype\":\"usage\",\"usage\":{\"input_tokens\":3},\"cost_usd\":0.01}\n".to_vec(),
+      ],
+    });
+    let mut events: Vec<PtyEvent> = Vec::new();
+    let result = pump_loop(
+      reader,
+      Box::<ClaudeStreamJsonParser>::default(),
+      "1",
+      "exec-1",
+      |e| events.push(e),
+    );
+
+    assert_eq!(result.output_bytes, 6 + 90); // iki chunk
+    assert!(result.last_completion.is_none());
+    // output + progress sinyali
+    assert!(events
+      .iter()
+      .any(|e| matches!(e.kind, PtyEventKind::Output { .. })));
+    assert!(events.iter().any(|e| matches!(
+      &e.kind,
+      PtyEventKind::Signal { signal: OutputSignal::Progress { .. } }
+    )));
+  }
+
+  #[test]
+  fn pump_loop_captures_last_completion() {
+    let reader = Box::new(FakeReader {
+      chunks: vec![
+        b"{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"bitti\"}\n".to_vec(),
+      ],
+    });
+    let mut last = None;
+    let result = pump_loop(
+      reader,
+      Box::<ClaudeStreamJsonParser>::default(),
+      "2",
+      "exec-2",
+      |e| last = Some(e),
+    );
+    assert!(result.last_completion.is_some());
+    assert!(last.is_some());
+  }
+
+  #[test]
+  fn pump_loop_works_with_regex_parser() {
+    let reader = Box::new(FakeReader {
+      chunks: vec![b"[1/3] calisiyor\n".to_vec()],
+    });
+    let mut signals = Vec::new();
+    let _ = pump_loop(reader, Box::<RegexProgressParser>::default(), "3", "exec-3", |e| {
+      if let PtyEventKind::Signal { signal } = e.kind {
+        signals.push(signal);
+      }
+    });
+    assert!(signals
+      .iter()
+      .any(|s| matches!(s, OutputSignal::Progress { turn: 1, .. })));
+  }
 }

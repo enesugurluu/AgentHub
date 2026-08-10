@@ -223,6 +223,8 @@ pub fn agent_spawn(
     spawned,
     channel,
     "spawn",
+    "pty",
+    false,
   )?;
 
   Ok(AgentSpawnResult {
@@ -295,6 +297,8 @@ pub fn agent_install_engine(
     spawned,
     channel,
     "install",
+    "pty",
+    false,
   )?;
 
   Ok(AgentSpawnResult {
@@ -343,6 +347,7 @@ pub fn agent_spawn_engine(
   if opts.env.is_empty() {
     opts.env = agent_envs(&agent_id, &worktree_path);
   }
+  let non_interactive = opts.non_interactive;
   let spawned = adapter.spawn_cli(opts, cols, rows)?;
 
   let execution_id = Uuid::new_v4().to_string();
@@ -355,6 +360,8 @@ pub fn agent_spawn_engine(
     spawned,
     channel,
     "spawn_engine",
+    &engine_type,
+    non_interactive,
   )?;
 
   Ok(AgentSpawnResult {
@@ -364,6 +371,9 @@ pub fn agent_spawn_engine(
 }
 
 /// Ortak oturum kaydı + output pump + DB olay kaydı.
+///
+/// `engine_type` + `non_interactive` → `select_parser` (WP-04): claude+print →
+/// stream-json, opencode → jsonl, diğer → regex.
 #[allow(clippy::too_many_arguments)]
 fn register_session(
   app: &AppHandle,
@@ -374,6 +384,8 @@ fn register_session(
   spawned: adapters::SpawnedPty,
   channel: Channel<PtyEvent>,
   event_type: &str,
+  engine_type: &str,
+  non_interactive: bool,
 ) -> Result<(), String> {
   let id = agent_id.to_string();
   let execution_id_owned = execution_id.to_string();
@@ -402,6 +414,7 @@ fn register_session(
         writer: spawned.writer,
         master: spawned.master,
         child: spawned.child,
+        last_completion: std::sync::Arc::new(std::sync::Mutex::new(None)),
         #[cfg(target_os = "windows")]
         job_handle: spawned.job_handle,
       },
@@ -419,6 +432,7 @@ fn register_session(
     execution_id_owned,
     spawned.reader,
     channel,
+    crate::pty::runtime::parser::select_parser(engine_type, non_interactive),
   );
   Ok(())
 }
