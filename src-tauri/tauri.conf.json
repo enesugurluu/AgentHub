@@ -1,0 +1,28 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "agentHub",
+  "version": "0.0.0",
+  "identifier": "com.agenthub.app",
+  "build": {
+    "beforeDevCommand": "npm exec --yes pnpm@9 -- dev",
+    "beforeBuildCommand": "npm exec --yes pnpm@9 -- build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "agentHub",
+        "width": 1000,
+        "height": 700,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "capabilities": [
+        "main-capability"
+      ]
+    }
+  }
+}
