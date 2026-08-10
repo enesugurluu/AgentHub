@@ -9,6 +9,8 @@ use uuid::Uuid;
 #[serde(rename_all = "camelCase")]
 pub struct WorktreeInfo {
     pub path: String,
+    #[serde(default)]
+    pub agent_id: String,
     pub agent_name: String,
     pub branch_name: String,
     pub created_at: u64,
@@ -58,7 +60,7 @@ fn run_git_command(repo_path: &Path, args: &[&str]) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn worktree_create(repo_path: String, agent_name: String, branch_strategy: BranchStrategy) -> Result<WorktreeInfo, String> {
+pub fn worktree_create(repo_path: String, agent_id: String, agent_name: String, branch_strategy: BranchStrategy) -> Result<WorktreeInfo, String> {
     let repo_dir = Path::new(&repo_path);
     if !repo_dir.exists() || !repo_dir.join(".git").exists() {
         return Err(format!("Invalid repository path: {}", repo_path));
@@ -133,6 +135,7 @@ pub fn worktree_create(repo_path: String, agent_name: String, branch_strategy: B
 
     let info = WorktreeInfo {
         path: worktree_path_str.clone(),
+        agent_id,
         agent_name: agent_name.clone(),
         branch_name: final_branch_name,
         created_at,
@@ -229,6 +232,34 @@ pub fn worktree_list(repo_path: String) -> Result<Vec<WorktreeInfo>, String> {
     Ok(worktrees)
 }
 
+pub fn resolve_worktree_path_for_agent(repo_path: &str, agent_id: &str) -> Result<String, String> {
+    let repo_dir = Path::new(repo_path);
+    let worktrees_root = repo_dir.join(".git").join("agenthub-worktrees");
+    let worktrees_root = worktrees_root
+        .canonicalize()
+        .map_err(|e| format!("Failed to canonicalize worktree root: {e}"))?;
+
+    let worktrees = worktree_list(repo_path.to_string())?;
+    for wt in worktrees {
+        if wt.agent_id == agent_id {
+            let wt_path = Path::new(&wt.path);
+            if !wt_path.exists() {
+                continue;
+            }
+
+            let canonical = wt_path
+                .canonicalize()
+                .map_err(|e| format!("Failed to canonicalize worktree path: {e}"))?;
+
+            if canonical.starts_with(&worktrees_root) {
+                return Ok(canonical.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    Err(format!("No valid managed worktree found for agent ID {}", agent_id))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,7 +305,7 @@ mod tests {
             name: "feat-1".to_string(),
         };
 
-        let result = worktree_create(repo_path_str.clone(), "agent-1".to_string(), strategy);
+        let result = worktree_create(repo_path_str.clone(), "uuid-123".to_string(), "agent-1".to_string(), strategy);
         assert!(result.is_ok(), "Failed to create worktree: {:?}", result.err());
 
         let info = result.unwrap();

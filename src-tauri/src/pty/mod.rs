@@ -1,5 +1,6 @@
 use tauri::{AppHandle, State};
 use uuid::Uuid;
+use serde::Serialize;
 
 use self::{
   registry::{EngineAdapterQuery, EngineAdapterRegistry, PtyManager, PtySession},
@@ -7,6 +8,14 @@ use self::{
   worktree::build_command,
 };
 use crate::pty::adapters::EngineMetadata;
+use crate::worktree::resolve_worktree_path_for_agent;
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSpawnResult {
+  pub agent_id: String,
+  pub execution_id: String,
+}
 
 pub mod adapters;
 pub mod registry;
@@ -68,44 +77,69 @@ pub fn pty_find_by_version(
 }
 
 #[tauri::command]
-pub fn pty_spawn(
+pub fn agent_spawn(
   app: AppHandle,
   manager: State<PtyManager>,
   adapters: State<EngineAdapterRegistry>,
+  agent_id: String,
   program: String,
   args: Vec<String>,
   cols: u16,
   rows: u16,
-) -> Result<String, String> {
-  let cmd = build_command(program, args);
+) -> Result<AgentSpawnResult, String> {
+  // In a real scenario, this would be resolved from the backend agent registry.
+  // We resolve the worktree securely without trusting the frontend.
+  let repo_path = std::env::current_dir().unwrap_or_default().to_string_lossy().to_string();
+  let worktree_path = resolve_worktree_path_for_agent(&repo_path, &agent_id)?;
+
+  let envs = vec![
+    ("AGENTHUB_AGENT_ID".to_string(), agent_id.clone()),
+    ("AGENTHUB_WORKTREE".to_string(), worktree_path.clone()),
+  ];
+
+  let cmd = build_command(program, args, Some(worktree_path), envs);
   let adapter = adapters
     .select_default()?
     .ok_or_else(|| "no PTY engine adapter available".to_string())?;
   let adapter_id = adapter.id().to_string();
   let spawned = adapter.spawn(cmd, cols, rows)?;
 
-  let id = Uuid::new_v4().to_string();
+  let id = agent_id.clone();
+  let execution_id = Uuid::new_v4().to_string();
+
   {
     let mut sessions = manager
       .sessions
       .lock()
       .map_err(|_| "pty sessions lock poisoned".to_string())?;
+
+    if sessions.contains_key(&id) {
+      return Err(format!("agent {} is already running", id));
+    }
+
     sessions.insert(
       id.clone(),
       PtySession {
         adapter_id,
+        execution_id: execution_id.clone(),
         writer: spawned.writer,
         child: spawned.child,
+        #[cfg(target_os = "windows")]
+        job_handle: spawned.job_handle,
       },
     );
   }
 
-  start_output_pump(app, id.clone(), spawned.reader);
-  Ok(id)
+  start_output_pump(app, id.clone(), execution_id.clone(), spawned.reader);
+
+  Ok(AgentSpawnResult {
+    agent_id: id,
+    execution_id,
+  })
 }
 
 #[tauri::command]
-pub fn pty_write(manager: State<PtyManager>, id: String, data: String) -> Result<(), String> {
+pub fn agent_write(manager: State<PtyManager>, agent_id: String, execution_id: String, data: String) -> Result<(), String> {
   use std::io::Write;
 
   let mut sessions = manager
@@ -113,8 +147,12 @@ pub fn pty_write(manager: State<PtyManager>, id: String, data: String) -> Result
     .lock()
     .map_err(|_| "pty sessions lock poisoned".to_string())?;
   let session = sessions
-    .get_mut(&id)
+    .get_mut(&agent_id)
     .ok_or_else(|| "pty session not found".to_string())?;
+
+  if session.execution_id != execution_id {
+    return Err("stale execution ID".to_string());
+  }
 
   session
     .writer
@@ -125,17 +163,25 @@ pub fn pty_write(manager: State<PtyManager>, id: String, data: String) -> Result
 }
 
 #[tauri::command]
-pub fn pty_stop(
+pub fn agent_stop(
   manager: State<PtyManager>,
   adapters: State<EngineAdapterRegistry>,
-  id: String,
+  agent_id: String,
+  execution_id: String,
 ) -> Result<(), String> {
   let session = {
     let mut sessions = manager
       .sessions
       .lock()
       .map_err(|_| "pty sessions lock poisoned".to_string())?;
-    sessions.remove(&id)
+    if let Some(session) = sessions.get(&agent_id) {
+       if session.execution_id != execution_id {
+           return Err("stale execution ID".to_string());
+       }
+    } else {
+       return Err("pty session not found".to_string());
+    }
+    sessions.remove(&agent_id)
   };
 
   if let Some(mut session) = session {

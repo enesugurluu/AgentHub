@@ -6,19 +6,33 @@ import { FitAddon } from 'xterm-addon-fit'
 import 'xterm/css/xterm.css'
 
 type PtyOutputEvent = {
-  id: string
+  agentId: string
+  executionId: string
   data: string
+}
+
+type PtyStatusEvent = {
+  agentId: string
+  executionId: string
+  status: string
+}
+
+type AgentSpawnResult = {
+  agentId: string
+  executionId: string
 }
 
 function isTauriRuntime() {
   return typeof window !== 'undefined' && typeof (window as any).__TAURI_INTERNALS__ !== 'undefined'
 }
 
-export function PtyTerminal() {
+export function PtyTerminal({ agentId }: { agentId?: string }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
+  const defaultAgentId = agentId || "default-agent-id"
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const [executionId, setExecutionId] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
   const [tauriAvailable] = useState(isTauriRuntime())
 
@@ -62,27 +76,40 @@ export function PtyTerminal() {
         return
       }
 
-      void invoke('pty_write', { id: sessionId, data })
+      if (!executionId) return
+      void invoke('agent_write', { agentId: sessionId, executionId, data })
     })
 
     return () => disposable.dispose()
-  }, [sessionId, tauriAvailable])
+  }, [sessionId, executionId, tauriAvailable])
 
   useEffect(() => {
     if (!tauriAvailable) return
-    let unlisten: (() => void) | undefined
+    let unlistenOutput: (() => void) | undefined
+    let unlistenStatus: (() => void) | undefined
 
-    void listen<PtyOutputEvent>('pty://output', (event) => {
-      if (event.payload.id !== sessionId) return
+    void listen<PtyOutputEvent>('agent://output', (event) => {
+      if (event.payload.agentId !== sessionId || event.payload.executionId !== executionId) return
       terminalRef.current?.write(event.payload.data)
     }).then((fn) => {
-      unlisten = fn
+      unlistenOutput = fn
+    })
+
+    void listen<PtyStatusEvent>('agent://status', (event) => {
+      if (event.payload.agentId !== sessionId || event.payload.executionId !== executionId) return
+      if (event.payload.status === "exited") {
+        setSessionId(null)
+        setExecutionId(null)
+      }
+    }).then((fn) => {
+      unlistenStatus = fn
     })
 
     return () => {
-      unlisten?.()
+      unlistenOutput?.()
+      unlistenStatus?.()
     }
-  }, [sessionId, tauriAvailable])
+  }, [sessionId, executionId, tauriAvailable])
 
   const startShell = async () => {
     if (starting || sessionId) return
@@ -100,7 +127,8 @@ export function PtyTerminal() {
       const cols = terminal?.cols ?? 80
       const rows = terminal?.rows ?? 24
 
-      const id = await invoke<string>('pty_spawn', {
+      const result = await invoke<AgentSpawnResult>('agent_spawn', {
+        agentId: defaultAgentId,
         program: 'powershell.exe',
         args: ['-NoLogo'],
         cols,
@@ -108,18 +136,27 @@ export function PtyTerminal() {
       })
 
       terminal?.reset()
-      setSessionId(id)
+      setSessionId(result.agentId)
+      setExecutionId(result.executionId)
+    } catch (e) {
+      console.error(e)
     } finally {
       setStarting(false)
     }
   }
 
   const stopShell = async () => {
-    if (!sessionId) return
-    const id = sessionId
+    if (!sessionId || !executionId) return
+    const aId = sessionId
+    const eId = executionId
     setSessionId(null)
+    setExecutionId(null)
     if (!tauriAvailable) return
-    await invoke('pty_stop', { id })
+    try {
+      await invoke('agent_stop', { agentId: aId, executionId: eId })
+    } catch (e) {
+      console.error("Failed to stop agent:", e)
+    }
   }
 
   return (
