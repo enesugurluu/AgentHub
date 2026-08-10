@@ -226,6 +226,18 @@ export function ptyResize(args: {
   return invoke('pty_resize', args)
 }
 
+/**
+ * Terminal buffer'ını oturum JSONL'ına `session_buffer` olarak ekler
+ * (xterm serialize — docs 12.2; WP-11).
+ */
+export function transcriptAppendSessionBuffer(args: {
+  agentId: string
+  executionId: string
+  text: string
+}): Promise<void> {
+  return invoke('transcript_append_session_buffer', args)
+}
+
 export function ptyListEngineAdapters(query?: string): Promise<string[]> {
   return invoke<string[]>('pty_list_engine_adapters', { query: query ?? 'all' })
 }

@@ -9,6 +9,7 @@
 //!   tablosuna yazılır.
 
 use std::io::Read;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -21,8 +22,10 @@ use tauri::{AppHandle, Manager, State};
 use crate::db::AppDb;
 use crate::pty::registry::PtyManager;
 use crate::pty::runtime::parser::{OutputParser, OutputSignal};
+use crate::pty::runtime::transcript::{append_transcript_entry, epoch_seconds, output_entry};
 
 pub mod parser;
+pub mod transcript;
 
 /// Frontend'e giden PTY olayı (serde tag'i: `kind.type = "output" | "exit" | "signal"`).
 ///
@@ -109,6 +112,7 @@ pub fn pump_loop(
 ///
 /// `parser` motor/moda göre `select_parser` ile seçilir (WP-04); son
 /// TaskCompleted/Failed sinyali oturumda saklanır (WP-10 finalize).
+/// `transcript_path` doluysa output/progress/exit satırları JSONL'a yazılır (WP-11).
 pub fn start_output_pump(
   app: AppHandle,
   agent_id: String,
@@ -116,18 +120,20 @@ pub fn start_output_pump(
   reader: Box<dyn Read + Send>,
   channel: Channel<PtyEvent>,
   parser: Box<dyn OutputParser>,
+  transcript_path: Option<PathBuf>,
 ) {
   // Oturum telemetrisi: pompa bayt sayar, exit olayında events tablosuna yazılır
   // (FAZ0 kabul kriteri 4 — chunk başına DB kaydı yerine kümülatif sayaç).
   let output_bytes = Arc::new(AtomicU64::new(0));
 
-  // -- Çıktı pompası: reader → parser + Channel ---------------------------------
+  // -- Çıktı pompası: reader → parser + Channel + JSONL --------------------------
   {
     let app = app.clone();
     let agent_id = agent_id.clone();
     let execution_id = execution_id.clone();
     let channel = channel.clone();
     let output_bytes = output_bytes.clone();
+    let transcript_path = transcript_path.clone();
 
     thread::spawn(move || {
       let result = pump_loop(reader, parser, &agent_id, &execution_id, |event| {
@@ -135,6 +141,34 @@ pub fn start_output_pump(
           // Bayt sayacı exit telemetrisinde kullanılır.
           if let PtyEventKind::Output { ref data } = event.kind {
             output_bytes.fetch_add(data.len() as u64, Ordering::Relaxed);
+            // JSONL output satırı (docs 12.2; WP-11).
+            if let Some(path) = &transcript_path {
+              let _ = append_transcript_entry(path, output_entry(data));
+            }
+          }
+        }
+        if let PtyEventKind::Signal { ref signal } = event.kind {
+          // JSONL progress satırı (WP-11/13).
+          if let Some(path) = &transcript_path {
+            if let OutputSignal::Progress {
+              turn,
+              cost,
+              tokens_in,
+              tokens_out,
+            } = signal
+            {
+              let _ = append_transcript_entry(
+                path,
+                serde_json::json!({
+                  "ts": epoch_seconds(),
+                  "type": "progress",
+                  "turn": turn,
+                  "cost": cost,
+                  "tokensIn": tokens_in,
+                  "tokensOut": tokens_out,
+                }),
+              );
+            }
           }
         }
         if channel.send(event).is_err() {
@@ -195,6 +229,19 @@ pub fn start_output_pump(
           kind: PtyEventKind::Exit { code: exit_code },
         };
         let _ = channel.send(event);
+
+        // JSONL exit satırı (docs 12.2; WP-11).
+        if let Some(path) = &transcript_path {
+          let _ = append_transcript_entry(
+            path,
+            serde_json::json!({
+              "ts": epoch_seconds(),
+              "type": "exit",
+              "code": exit_code,
+              "outputBytes": output_bytes.load(Ordering::Relaxed),
+            }),
+          );
+        }
 
         if let Some(db) = app.try_state::<AppDb>() {
           let total_output = output_bytes.load(Ordering::Relaxed);

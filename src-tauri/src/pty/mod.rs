@@ -406,6 +406,12 @@ fn register_session(
       return Err(format!("agent {id} is already running"));
     }
 
+    // JSONL oturum kaydı (docs 12.2; WP-11): ~/.agentcompany/logs/<agent>/manual-<epoch>.jsonl
+    let transcript_path = crate::pty::runtime::transcript::agentcompany_logs_dir()
+      .and_then(|base| {
+        crate::pty::runtime::transcript::open_transcript(&base, agent_id, "manual").ok()
+      });
+
     sessions.insert(
       id.clone(),
       PtySession {
@@ -415,6 +421,7 @@ fn register_session(
         master: spawned.master,
         child: spawned.child,
         last_completion: std::sync::Arc::new(std::sync::Mutex::new(None)),
+        transcript_path: transcript_path.clone(),
         #[cfg(target_os = "windows")]
         job_handle: spawned.job_handle,
       },
@@ -433,6 +440,7 @@ fn register_session(
     spawned.reader,
     channel,
     crate::pty::runtime::parser::select_parser(engine_type, non_interactive),
+    transcript_path,
   );
   Ok(())
 }
@@ -463,6 +471,52 @@ pub fn agent_write(
     .write_all(data.as_bytes())
     .map_err(|e| e.to_string())?;
   session.writer.flush().map_err(|e| e.to_string())?;
+
+  // JSONL input satırı (docs 12.2; WP-11).
+  if let Some(path) = &session.transcript_path {
+    let _ = crate::pty::runtime::transcript::append_transcript_entry(
+      path,
+      serde_json::json!({
+        "ts": crate::pty::runtime::transcript::epoch_seconds(),
+        "type": "input",
+        "content": data,
+      }),
+    );
+  }
+  Ok(())
+}
+
+/// Terminal buffer'ını oturum JSONL'ına `session_buffer` satırı olarak ekler
+/// (xterm-addon-serialize — docs 12.2; FAZ0 serialize ertelemesi kapanır).
+#[tauri::command]
+pub fn transcript_append_session_buffer(
+  manager: State<PtyManager>,
+  agent_id: String,
+  execution_id: String,
+  text: String,
+) -> Result<(), String> {
+  let mut sessions = manager
+    .sessions
+    .lock()
+    .map_err(|_| "pty sessions lock poisoned".to_string())?;
+  let session = sessions
+    .get(&agent_id)
+    .ok_or_else(|| "pty session not found".to_string())?;
+
+  if session.execution_id != execution_id {
+    return Err("stale execution ID".to_string());
+  }
+
+  if let Some(path) = &session.transcript_path {
+    crate::pty::runtime::transcript::append_transcript_entry(
+      path,
+      serde_json::json!({
+        "ts": crate::pty::runtime::transcript::epoch_seconds(),
+        "type": "session_buffer",
+        "content": text,
+      }),
+    )?;
+  }
   Ok(())
 }
 

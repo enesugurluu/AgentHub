@@ -43,6 +43,7 @@ pub fn run() {
       pty::agent_write,
       pty::agent_stop,
       pty::agent_install_engine,
+      pty::transcript_append_session_buffer,
       pty::pty_resize,
       pty::pty_list_engine_adapters,
       pty::pty_list_all_ids,

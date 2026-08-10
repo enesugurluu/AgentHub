@@ -15,6 +15,8 @@ export type SessionState = {
 type TerminalStore = {
   sessions: Record<string, SessionState>
   activeSessionAgentId: string | null
+  /** Serialize edilmiş terminal buffer'ları (sekme geri açılışta geri yükleme — WP-11). */
+  buffers: Record<string, string>
   setActive: (agentId: string | null) => void
   startSession: (agentId: string, engineType: string) => void
   markRunning: (agentId: string, executionId: string) => void
@@ -23,6 +25,7 @@ type TerminalStore = {
   stopSession: (agentId: string) => void
   bumpOutput: (agentId: string, bytes: number) => void
   getSession: (agentId: string) => SessionState | undefined
+  setBuffer: (agentId: string, text: string) => void
 }
 
 const initialSession = (agentId: string, engineType: string): SessionState => ({
@@ -37,8 +40,12 @@ const initialSession = (agentId: string, engineType: string): SessionState => ({
 export const useTerminalStore = create<TerminalStore>((set, get) => ({
   sessions: {},
   activeSessionAgentId: null,
+  buffers: {},
 
   setActive: (agentId) => set({ activeSessionAgentId: agentId }),
+
+  setBuffer: (agentId, text) =>
+    set((state) => ({ buffers: { ...state.buffers, [agentId]: text } })),
 
   startSession: (agentId, engineType) =>
     set((state) => ({

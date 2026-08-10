@@ -27,7 +27,7 @@ talimatlar, test planı, doğrulama komutları, riskler ve devir notlarını ta�
 | [FAZ1-WP08](./FAZ1-WP08-FIRE-AKISI.md) | 8 | Fire onay akışı + Inspector butonu | 4 sa | P0 | WP-07 | ✅ Onay diyaloğu + 3 worktree aksiyonu; store fireAgent |
 | [FAZ1-WP09](./FAZ1-WP09-OFIS-KATI-SVG.md) | 9 | Ofis katı SVG v1 (AgentDesk + zoom/pan) | 10 sa | P0 | WP-07 | ✅ SVG zemin + zoom/pan + 6 durum rozeti; seçim → Inspector/terminal |
 | [FAZ1-WP10](./FAZ1-WP10-GOREV-PROTOKOLU.md) | 10 | Görev protokolü (`AGENT_TASK.md`) | 10–12 sa | P0 | WP-02, WP-03, WP-04, WP-05 | Görev → worktree → non-interactive → tamamlanma |
-| [FAZ1-WP11](./FAZ1-WP11-JSONL-VE-SERIALIZE.md) | 11 | JSONL oturum kaydı + serialize | 4 sa | P1 | WP-04 | `.agentcompany/logs`; buffer persist |
+| [FAZ1-WP11](./FAZ1-WP11-JSONL-VE-SERIALIZE.md) | 11 | JSONL oturum kaydı + serialize | 4 sa | P1 | WP-04 | ✅ transcript.rs + pump/input/exit kayıtları + SerializeAddon buffer persist |
 | [FAZ1-WP12](./FAZ1-WP12-SAGLIK-PANELI-VE-KURULUM.md) | 12 | Sağlık paneli + kurulum akışı | 4 sa | P1 | WP-03 | "Kur" → onaylı PTY oturumu |
 | [FAZ1-WP13](./FAZ1-WP13-BUTCE-VE-COST-TELEMETRI.md) | 13 | Bütçe/effort aktarımı + cost telemetri | 4 sa | P1 | WP-02, WP-04, WP-07 | Hire değerleri spawn'a ulaşıyor |
 | [FAZ1-WP14](./FAZ1-WP14-TEST-CI-DOKUMAN-KAPANIS.md) | 14 | Test/CI/doküman + kapanış denetimi | 6 sa | P0 | Hepsi | CI 3 OS yeşil; kapanış raporu |

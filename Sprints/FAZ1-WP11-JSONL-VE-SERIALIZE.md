@@ -1,8 +1,18 @@
 # Sprint FAZ1-WP11 — JSONL Oturum Kaydı ve xterm Serialize
 
 > **Kart:** FAZ1-PLANI.md §5 WP-11 · ADR-8
-> **Takvim:** Hafta 2 · Gün 10 (plan: 2026-08-21) · **Süre:** 4 sa · **Öncelik:** P1
-> **Durum:** ⏳ Planlandı
+> **Takvim:** Hafta 2 · Gün 10 (2026-08-21) · **Süre:** 4 sa · **Öncelik:** P1
+> **Durum:** ✅ Kapandı — kod + frontend entegrasyonu; `pnpm check/typecheck/build` yeşil
+>
+> **Uygulama notları (2026-08-10):**
+> - **Bağımlılık kararı (sapma):** `chrono`/`dirs` eklenmedi — crates.io erişilemez, CI `--locked`;
+>   zaman damgası epoch saniye (SystemTime), ev dizini HOME/USERPROFILE. İleride `chrono` ile RFC3339.
+> - `pty/runtime/transcript.rs`: `open_transcript` (~/.agentcompany/logs/<slug>/manual-<epoch>.jsonl),
+>   `append_transcript_entry`, `output_entry`, `slugify` (path traversal korumalı) — 3 unit test.
+> - `start_output_pump(transcript_path)`: output + progress → JSONL; lifecycle: exit → JSONL.
+> - `agent_write` → `input` satırı; `transcript_append_session_buffer` komutu (`session_buffer`).
+> - Frontend: `SerializeAddon` bağlandı (FAZ0 ertelemesi kapandı); exit'te buffer → JSONL + `buffers` store;
+>   sekme geri açılışta in-memory geri yükleme (canlı oturum çıktısı varken atlanır).
 
 ## 1. Hedef
 

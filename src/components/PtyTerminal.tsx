@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import { SearchAddon } from 'xterm-addon-search'
+import { SerializeAddon } from 'xterm-addon-serialize'
 import { WebLinksAddon } from 'xterm-addon-web-links'
 import { WebglAddon } from 'xterm-addon-webgl'
 import 'xterm/css/xterm.css'
@@ -18,6 +19,7 @@ import {
   isTauriRuntime,
   type PtyEvent,
   ptyResize,
+  transcriptAppendSessionBuffer,
 } from '@/lib/ipc'
 import { useTerminalStore } from '@/store/terminal'
 
@@ -99,12 +101,27 @@ export function PtyTerminal({
     const searchAddon = new SearchAddon()
     terminal.loadAddon(searchAddon)
     searchAddonRef.current = searchAddon
+    // JSONL session_buffer kaydı için (docs 12.2; WP-11 — FAZ0 serialize ertelemesi).
+    const serializeAddon = new SerializeAddon()
+    terminal.loadAddon(serializeAddon)
 
     terminalRef.current = terminal
 
     if (containerRef.current) {
       terminal.open(containerRef.current)
       requestAnimationFrame(() => fitAddon.fit())
+    }
+
+    // WP-11: önceki oturumun serialize edilmiş buffer'ı varsa geri yükle
+    // (yalnızca bu sekmede henüz canlı çıktı yokken — çift yazma önlenir).
+    const savedBuffer = useTerminalStore.getState().buffers[agentId]
+    const sessionState = useTerminalStore.getState().sessions[agentId]
+    if (savedBuffer && (!sessionState || sessionState.outputBytes === 0)) {
+      try {
+        terminal.write(savedBuffer)
+      } catch {
+        // geri yükleme başarısızsa yoksay
+      }
     }
 
     // PTY kanalı: backend her olayı sadece bu oturuma gönderir.
@@ -119,6 +136,20 @@ export function PtyTerminal({
         useTerminalStore.getState().bumpOutput(event.agentId, bytes.length)
       } else if (event.kind.type === 'exit') {
         useTerminalStore.getState().markExited(event.agentId)
+        // JSONL session_buffer kaydı + in-memory geri yükleme (docs 12.2; WP-11).
+        try {
+          const buffer = serializeAddon.serialize()
+          useTerminalStore.getState().setBuffer(event.agentId, buffer)
+          void transcriptAppendSessionBuffer({
+            agentId: event.agentId,
+            executionId: event.executionId,
+            text: buffer,
+          }).catch(() => {
+            // transcript yoksa sessiz geç
+          })
+        } catch {
+          // serialize desteklenmiyorsa sessiz geç
+        }
         terminal.writeln('')
         terminal.writeln(`\x1b[90m[agent ${event.agentId} exited] (code ${event.kind.code})\x1b[0m`)
       }
