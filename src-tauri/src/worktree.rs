@@ -65,6 +65,41 @@ fn generate_worktree_name(agent_name: &str) -> String {
     format!("{sanitized}-{suffix}")
 }
 
+fn sanitize_repo_path(raw: &str) -> PathBuf {
+    // Windows'tan gelen yolları Linux tarafında kullanılabilir hale getirir.
+    //
+    // Olası girdiler ve sonuçları:
+    //   "//?/D:/Projeler/..."  → "/mnt/d/Projeler/..."
+    //   "D:\\Projeler\\..."    → "/mnt/d/Projeler/..."
+    //   "/home/user/..."       → "/home/user/..."   (değişmez)
+    //   "./foo" / "foo"        → "foo"              (relative çözülmez; sonuç path olarak geçerli)
+    //
+    // Gerçek bir Linux sandbox'ında Windows mount noktası (/mnt/d vb.) yoksa
+    // bu fonksiyon yalnızca git worktree yolu oluşturma sırasında path traversal
+    // koruması sağlar; gerçek erişim için kullanıcıya doğru Linux yolunu vermesi
+    // gerekir. Kullanım notu: docs/ajanofis.../10-IZOLASYON-GUVENLIK.md ve
+    // src-tauri/src/worktree.rs içeriğini inceleyin.
+    let s = raw.trim();
+
+    // 1) Windows UNC prefix: "//?/D:/..." → "D:/..."
+    let s = s.strip_prefix("//?/").unwrap_or(s);
+
+    // 2) Windows disk harfi tespiti: "D:..." veya "D:/..."
+    if s.len() >= 2
+        && s.chars().next().map_or(false, |c| c.is_ascii_alphabetic())
+        && s.chars().nth(1) == Some(':')
+    {
+        let disk = s.chars().next().unwrap().to_ascii_lowercase();
+        let inner = s[2..].replace('\\', "/").trim_matches('/');
+        return PathBuf::from(format!("/mnt/{}/{}", disk, inner));
+    }
+
+    // 3) POSIX yol: ters slash'ları düzelt, uçları temizle.
+    //    Bir kez daha kontrol: bu yol relatif ise ("./" ile başlıyorsa) olduğu gibi bırak.
+    let s = s.replace('\\', "/").trim_matches('/');
+    PathBuf::from(s)
+}
+
 fn run_git_command(repo_path: &Path, args: &[&str]) -> Result<String, String> {
     let output = Command::new("git")
         .current_dir(repo_path)
@@ -81,9 +116,9 @@ fn run_git_command(repo_path: &Path, args: &[&str]) -> Result<String, String> {
 
 #[tauri::command]
 pub fn worktree_create(repo_path: String, agent_id: String, agent_name: String, branch_strategy: BranchStrategy) -> Result<WorktreeInfo, String> {
-    let repo_dir = Path::new(&repo_path);
+    let repo_dir = sanitize_repo_path(&repo_path);
     if !repo_dir.exists() || !repo_dir.join(".git").exists() {
-        return Err(format!("Invalid repository path: {}", repo_path));
+        return Err(format!("Invalid repository path: {} (sanitized: {})", repo_path, repo_dir.display()));
     }
 
     let mut attempts = 0;
@@ -176,9 +211,11 @@ pub fn worktree_remove(
     options: Option<WorktreeRemoveOptions>,
 ) -> Result<(), String> {
     let opts = options.unwrap_or_default();
-    let wt_path = Path::new(&worktree_path);
+    // metadata'daki yollar Windows ortamında yazılmış olabilir; Linux tarafında
+    // kullanmak için sanitize et.
+    let wt_path = sanitize_repo_path(&worktree_path);
     if !wt_path.exists() {
-        return Err(format!("Worktree path does not exist: {worktree_path}"));
+        return Err(format!("Worktree path does not exist: {worktree_path} (sanitized: {})", wt_path.display()));
     }
 
     let metadata_path = wt_path.join(".agenthub.json");
@@ -213,7 +250,7 @@ pub fn worktree_remove(
         // delete (varsayılan): mevcut davranış.
         _ => {
             let is_force = opts.force;
-            let repo_dir = Path::new(&info.parent_repo_path);
+            let repo_dir = sanitize_repo_path(&info.parent_repo_path);
 
             // To allow safe deletion, we need to temporarily move/remove the metadata file
             // so `git worktree remove` doesn't complain about untracked files if it's not forced.
@@ -225,7 +262,7 @@ pub fn worktree_remove(
             if is_force {
                 args.push("--force");
             }
-            args.push(&worktree_path);
+            args.push(wt_path.to_string_lossy().as_ref());
 
             let result = run_git_command(repo_dir, &args);
 
@@ -387,9 +424,9 @@ pub fn worktree_for_agent(repo_path: String, agent_id: String) -> Result<Worktre
 
 #[tauri::command]
 pub fn worktree_list(repo_path: String) -> Result<Vec<WorktreeInfo>, String> {
-    let repo_dir = Path::new(&repo_path);
+    let repo_dir = sanitize_repo_path(&repo_path);
     if !repo_dir.exists() || !repo_dir.join(".git").exists() {
-        return Err(format!("Invalid repository path: {}", repo_path));
+        return Err(format!("Invalid repository path: {} (sanitized: {})", repo_path, repo_dir.display()));
     }
 
     let output = run_git_command(repo_dir, &["worktree", "list", "--porcelain"])
@@ -417,7 +454,7 @@ pub fn worktree_list(repo_path: String) -> Result<Vec<WorktreeInfo>, String> {
 }
 
 pub fn resolve_worktree_path_for_agent(repo_path: &str, agent_id: &str) -> Result<String, String> {
-    let repo_dir = Path::new(repo_path);
+    let repo_dir = sanitize_repo_path(repo_path);
     let worktrees_root = repo_dir.join(".git").join("agenthub-worktrees");
     let worktrees_root = worktrees_root
         .canonicalize()
