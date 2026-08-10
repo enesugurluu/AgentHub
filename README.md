@@ -1,5 +1,7 @@
 # AgentHub
 
+[![CI](https://github.com/enesugurluu/AgentHub/actions/workflows/ci.yml/badge.svg)](https://github.com/enesugurluu/AgentHub/actions/workflows/ci.yml)
+
 AjanOfis (AjanŞirket) vizyonunun Tauri 2 masaüstü uygulaması — çoklu AI CLI ajanını
 (Claude Code, ileride Codex/Gemini/OpenCode...) izole git worktree'lerinde yöneten
 bir "ajan şirketi" yönetim paneli.

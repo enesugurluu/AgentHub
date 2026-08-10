@@ -122,7 +122,7 @@ Bu, AjanOfis **MVP Yol Haritası (Bölüm 17) "Faz 1: İskelet (2 Hafta, M0)"** 
 | 13 | Sağlık kontrolü | `claude doctor` benzeri | 🟡 PTY `health()` var | CLI adaptörlerinde gerçek `--version`/`doctor` parse | P1 |
 | 14 | Lint/Format | Biome + pre-commit (roadmap §3.1) | 🟡 ESLint şablonu | Biome'a geçiş; eslint kaldır | P1 |
 | 15 | Paket yönetimi | pnpm (docs her yerde pnpm) | 🟡 çift lockfile | pnpm'e sabitle; package-lock.json sil | P1 |
-| 16 | CI | — | ❌ yok | GitHub Actions: biome + tsc + vite build + cargo test/clippy | P2 |
+| 16 | CI | — | ✅ `.github/workflows/ci.yml` kuruldu (frontend + ubuntu/windows/macos cargo matrisi + ci-gate) | — | — |
 | 17 | CLAUDE.md/.claude | Claude Code FAZ0 (Bölüm 3.4-3.5) | ❌ yok | CLAUDE.md + settings.json + .claudeignore | P1 |
 | 18 | İzolasyon | bwrap/Docker, secret maskeleme (Bölüm 10) | 🟡 Win: Job Objects ✅ / Unix: sadece child kill | Unix'te setsid/process-group kill | P1 |
 | 19 | Capabilities | capability-based izin (Bölüm 15) | 🟡 `core:default` | dialog/fs plugin permission'ları | P2 |

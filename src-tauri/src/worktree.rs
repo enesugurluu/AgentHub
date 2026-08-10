@@ -267,7 +267,8 @@ mod tests {
     use tempfile::tempdir;
 
     fn setup_mock_repo() -> (PathBuf, PathBuf) {
-        let dir = tempdir().unwrap().into_path();
+        // tempfile 3.27: `into_path()` deprecated — `keep()` aynı semantikte.
+        let dir = tempdir().unwrap().keep();
         let repo_path = dir.join("main-repo");
         fs::create_dir_all(&repo_path).unwrap();
 
