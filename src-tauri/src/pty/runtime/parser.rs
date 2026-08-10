@@ -349,22 +349,28 @@ mod tests {
 
   #[test]
   fn select_parser_mapping() {
-    // claude+print → stream-json; claude interaktif → regex; opencode → jsonl; diğer → regex.
-    // (dyn trait üzerinde `is::<T>()` yok → type_name ile tür kontrolü)
-    assert!(
-      std::any::type_name_of_val(&*select_parser("claude", true))
-        .contains("ClaudeStreamJsonParser")
+    // Davranışsal tür kontrolü: her motor/moda uygun parser seçiliyor mu?
+    // claude+print → stream-json (usage → Progress).
+    let mut p = select_parser("claude", true);
+    let mut signals = Vec::new();
+    p.feed(
+      br#"{"type":"system","subtype":"usage","usage":{"input_tokens":1},"cost_usd":0.1}
+"#,
+      &mut signals,
     );
-    assert!(
-      std::any::type_name_of_val(&*select_parser("claude", false))
-        .contains("RegexProgressParser")
-    );
-    assert!(
-      std::any::type_name_of_val(&*select_parser("opencode", false))
-        .contains("OpencodeJsonlParser")
-    );
-    assert!(
-      std::any::type_name_of_val(&*select_parser("codex", true)).contains("RegexProgressParser")
-    );
+    assert!(matches!(&signals[0], OutputSignal::Progress { tokens_in: 1, .. }));
+
+    // opencode → jsonl (session.completed → TaskCompleted).
+    let mut p = select_parser("opencode", false);
+    let mut signals = Vec::new();
+    p.feed(br#"{"type":"session.completed","reason":"ok"}
+"#, &mut signals);
+    assert!(matches!(&signals[0], OutputSignal::TaskCompleted { .. }));
+
+    // claude interaktif + diğer motorlar → regex ([n/N] → Progress).
+    let mut p = select_parser("codex", true);
+    let mut signals = Vec::new();
+    p.feed(b"[1/3] calisiyor\n", &mut signals);
+    assert!(matches!(&signals[0], OutputSignal::Progress { turn: 1, .. }));
   }
 }

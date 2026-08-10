@@ -112,11 +112,15 @@ mod tests {
 
   #[test]
   fn detect_with_fake_binary() {
-    with_fake_binary("opencode", "echo 0.9.0", || {
-      let adapter = OpencodeAdapter;
-      assert!(adapter.detect());
-      assert_eq!(adapter.metadata().version.as_deref(), Some("0.9.0"));
-    });
+    // Mock matrisi yalnızca Unix (PATH'e sahte binary); Windows'ta boş test.
+    #[cfg(unix)]
+    {
+      with_fake_binary("opencode", "echo 0.9.0", || {
+        let adapter = OpencodeAdapter;
+        assert!(adapter.detect());
+        assert_eq!(adapter.metadata().version.as_deref(), Some("0.9.0"));
+      });
+    }
   }
 
   #[test]

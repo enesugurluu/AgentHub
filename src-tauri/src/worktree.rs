@@ -454,6 +454,8 @@ mod tests {
         fs::write(repo_path.join("README.md"), "Initial setup").unwrap();
         Command::new("git").current_dir(&repo_path).args(["add", "."]).output().unwrap();
         Command::new("git").current_dir(&repo_path).args(["commit", "-m", "Initial commit"]).output().unwrap();
+        // Varsayılan dal CI'da "master" olabilir; testler "main" bekler (CI tutarlılığı).
+        Command::new("git").current_dir(&repo_path).args(["branch", "-M", "main"]).output().unwrap();
 
         (dir, repo_path)
     }

@@ -111,12 +111,16 @@ mod tests {
 
   #[test]
   fn detect_with_fake_binary() {
-    with_fake_binary("codex", "echo 1.2.3", || {
-      let adapter = CodexAdapter;
-      assert!(adapter.detect());
-      assert_eq!(adapter.metadata().version.as_deref(), Some("1.2.3"));
-      assert_eq!(adapter.health(), Ok(()));
-    });
+    // Mock matrisi yalnızca Unix (PATH'e sahte binary); Windows'ta boş test.
+    #[cfg(unix)]
+    {
+      with_fake_binary("codex", "echo 1.2.3", || {
+        let adapter = CodexAdapter;
+        assert!(adapter.detect());
+        assert_eq!(adapter.metadata().version.as_deref(), Some("1.2.3"));
+        assert_eq!(adapter.health(), Ok(()));
+      });
+    }
   }
 
   #[test]
