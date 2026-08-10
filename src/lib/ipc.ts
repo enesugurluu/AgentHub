@@ -35,6 +35,14 @@ export type EngineMetadata = {
   capabilities: string[]
 }
 
+/** Adaptör detect bilgisi (kurulu mu + sürüm + capability + kurulum ipucu). */
+export type DetectResult = {
+  detected: boolean
+  version: string | null
+  capabilities: string[]
+  installHint: string | null
+}
+
 export type AgentRecord = {
   id: number
   name: string
@@ -221,6 +229,11 @@ export function ptyFindByEngineType(engineType: string): Promise<EngineMetadata[
 /** Tek adaptörün metadata'sı — Settings UI id → metadata çözümlemesi. */
 export function ptyAdapterMetadata(id: string): Promise<EngineMetadata> {
   return invoke<EngineMetadata>('pty_adapter_metadata', { id })
+}
+
+/** Tek adaptörün detect bilgisi (kurulu mu + install_hint) — WP-07/12. */
+export function ptyAdapterDetectInfo(id: string): Promise<DetectResult> {
+  return invoke<DetectResult>('pty_adapter_detect_info', { id })
 }
 
 export function listAgents(): Promise<AgentRecord[]> {

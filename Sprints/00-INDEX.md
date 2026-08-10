@@ -23,7 +23,7 @@ talimatlar, test planı, doğrulama komutları, riskler ve devir notlarını ta�
 | [FAZ1-WP04](./FAZ1-WP04-OUTPUT-PARSER-VE-PROGRESS-EVENT.md) | 4 | OutputParser iskeleti + Progress event | 8 sa | P1 | WP-03 | Fixture parser testleri; Progress akıyor |
 | [FAZ1-WP05](./FAZ1-WP05-WORKTREE-OTOMASYONU.md) | 5 | Worktree otomasyonu + `.env.local` + silme seçenekleri | 8 sa | P0 | WP-01, WP-06 | ✅ Repo köküne düşme yok; ensure + port offset + 3 silme aksiyonu |
 | [FAZ1-WP06](./FAZ1-WP06-REPO-SECICI-VE-SETTINGS.md) | 6 | Repo seçici + settings kalıcılığı | 4 sa | P0 | WP-01 | ✅ Dialog seçimi kalıcı; TopBar çipi + onboarding |
-| [FAZ1-WP07](./FAZ1-WP07-HIRE-WIZARD.md) | 7 | Hire Wizard (3 adım) + preset roller | 10–12 sa | P0 | WP-01, WP-03, WP-06 | "İşe Al" → DB + ofiste masa |
+| [FAZ1-WP07](./FAZ1-WP07-HIRE-WIZARD.md) | 7 | Hire Wizard (3 adım) + preset roller | 10–12 sa | P0 | WP-01, WP-03, WP-06 | ✅ 3 adım + doğrulama; "İşe Al" → DB + seçim; 7 shadcn bileşeni elle |
 | [FAZ1-WP08](./FAZ1-WP08-FIRE-AKISI.md) | 8 | Fire onay akışı + Inspector butonu | 4 sa | P0 | WP-07 | Onay diyaloğu; worktree seçenekleri |
 | [FAZ1-WP09](./FAZ1-WP09-OFIS-KATI-SVG.md) | 9 | Ofis katı SVG v1 (AgentDesk + zoom/pan) | 10 sa | P0 | WP-07 | 6 durum rozeti; seçim → Inspector |
 | [FAZ1-WP10](./FAZ1-WP10-GOREV-PROTOKOLU.md) | 10 | Görev protokolü (`AGENT_TASK.md`) | 10–12 sa | P0 | WP-02, WP-03, WP-04, WP-05 | Görev → worktree → non-interactive → tamamlanma |

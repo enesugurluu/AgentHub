@@ -139,6 +139,19 @@ pub fn pty_adapter_metadata(
     .ok_or_else(|| format!("no adapter registered with id '{id}'"))
 }
 
+/// Tek adaptörün detect bilgisini (kurulu mu + sürüm + capability + install_hint)
+/// döndürür — Hire Wizard Adım 2 ve Settings "Motorlar" (WP-07/12) bunu kullanır.
+#[tauri::command]
+pub fn pty_adapter_detect_info(
+  adapters: State<EngineAdapterRegistry>,
+  id: String,
+) -> Result<crate::pty::adapters::DetectResult, String> {
+  adapters
+    .get(&id)?
+    .map(|adapter| adapter.detect_info())
+    .ok_or_else(|| format!("no adapter registered with id '{id}'"))
+}
+
 #[tauri::command]
 pub fn pty_unregister_engine_adapter(
   adapters: State<EngineAdapterRegistry>,

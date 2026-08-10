@@ -47,6 +47,7 @@ pub fn run() {
       pty::pty_list_engine_adapters,
       pty::pty_list_all_ids,
       pty::pty_adapter_metadata,
+      pty::pty_adapter_detect_info,
       pty::pty_unregister_engine_adapter,
       pty::pty_find_by_engine_type,
       pty::pty_find_by_version,

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-import { type AgentRecord, listAgents } from '@/lib/ipc'
+import { type AgentRecord, agentHire, type HirePayload, listAgents } from '@/lib/ipc'
 
 type AgentState = {
   agents: AgentRecord[]
@@ -8,8 +8,14 @@ type AgentState = {
   loading: boolean
   error: string | null
   fetchAgents: () => Promise<void>
+  /** İşe alım (Hire Wizard — WP-07): backend kaydı + liste yenileme + seçim. */
+  hireAgent: (payload: HirePayload) => Promise<AgentRecord | null>
   selectAgent: (id: number | null) => void
 }
+
+/** `fired` olmayan ajanlar — sidebar/ofis/inspector ortak filtresi (WP-08/09). */
+export const selectVisibleAgents = (agents: AgentRecord[]): AgentRecord[] =>
+  agents.filter((a) => !a.firedAt)
 
 export const useAgentStore = create<AgentState>((set, get) => ({
   agents: [],
@@ -27,6 +33,18 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       }
     } catch (e) {
       set({ loading: false, error: String(e) })
+    }
+  },
+
+  hireAgent: async (payload) => {
+    try {
+      const record = await agentHire(payload)
+      const agents = await listAgents()
+      set({ agents, selectedAgentId: record.id, error: null })
+      return record
+    } catch (e) {
+      set({ error: String(e) })
+      return null
     }
   },
 

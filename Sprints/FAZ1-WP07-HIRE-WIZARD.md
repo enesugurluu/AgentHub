@@ -1,8 +1,17 @@
 # Sprint FAZ1-WP07 — Hire Wizard (İşe Alım Sihirbazı)
 
 > **Kart:** FAZ1-PLANI.md §5 WP-7 · ADR-1, ADR-10
-> **Takvim:** Hafta 2 · Gün 8–9 (plan: 2026-08-19 → 2026-08-20) · **Süre:** 10–12 sa · **Öncelik:** P0
-> **Durum:** ⏳ Planlandı
+> **Takvim:** Hafta 2 · Gün 8–9 (2026-08-19 → 2026-08-20) · **Süre:** 10–12 sa · **Öncelik:** P0
+> **Durum:** ✅ Kapandı — UI uygulandı, `pnpm check/typecheck/build` yeşil
+>
+> **Uygulama notları (2026-08-10):**
+> - shadcn CLI `ui.shadcn.com`'a erişemedi (ağ kısıtı) → 7 bileşen elle yazıldı (new-york/data-slot deseni):
+>   `select, textarea, switch, alert-dialog, tooltip, dropdown-menu, progress` (+6 Radix paketi).
+> - `pty_adapter_detect_info` komutu eklendi (DetectResult → install_hint/detected; WP-12 de kullanır).
+> - `src/lib/presets.ts`: docs 6.3 tablosu (9 preset) + avatar renk paleti.
+> - `src/hooks/useEngineRegistry.ts`: id + metadata + detectInfo (kurulu mu).
+> - `src/components/Settings/HireWizard.tsx`: 3 adım + progress + doğrulama (motor kurulu, bütçe/turn sayısal, isim ≥ 2).
+> - `agents` store'una `hireAgent`; `selectVisibleAgents` filtresi; AgentSidebar "+" → HireWizard.
 
 ## 1. Hedef
 
