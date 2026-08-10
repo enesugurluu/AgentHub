@@ -67,6 +67,7 @@ pub(crate) fn read_task_content(task_file: &Option<PathBuf>) -> Result<Option<St
 }
 
 #[cfg(test)]
+#[allow(clippy::all)] // platform koşullu (cfg unix/not(unix)) test yardımcıları — Windows lint kapsamı daraltıldı
 pub(crate) mod test_util {
   use std::path::PathBuf;
 

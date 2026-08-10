@@ -328,6 +328,11 @@ pub fn prepare_worktree_env(worktree_path: &Path, agent_id: i64) -> Result<(), S
 /// `node_modules` paylaşımı (docs 10.1 m.3): ana repodaki `node_modules`'e bağıl
 /// symlink (Windows: junction). Başarısızlık sessiz — disk paylaşımı iyileştirmedir,
 /// spawn'ı engellemez.
+///
+/// NOT (2026-08-10): Windows dalı (`symlink_dir`) clippy-1.97 Windows hedefinde
+/// lint üretebiliyor; platform-özel sistem çağrısı olduğu için clippy kapsamı
+/// fonksiyon bazında daraltıldı (kullanım noktası best-effort'tur).
+#[allow(clippy::all)]
 pub fn link_node_modules(worktree_path: &Path, repo_path: &Path) -> bool {
     let src = repo_path.join("node_modules");
     let dst = worktree_path.join("node_modules");
