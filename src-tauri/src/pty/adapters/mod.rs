@@ -168,6 +168,9 @@ pub(crate) fn spawn_pty_isolated(
     })
     .map_err(|e| e.to_string())?;
 
+  // NOT: `mut` yalnızca Windows hata yollarındaki child.kill() (&mut self) için
+  // gerekli; Unix build'inde unused_mut üretir — allow her iki hedefi de temizler.
+  #[allow(unused_mut)]
   let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
 
   // Windows'ta Job Object handle'ı struct kurulumunda (aşağıda) kullanıldığı
