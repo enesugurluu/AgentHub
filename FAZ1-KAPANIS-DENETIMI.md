@@ -5,7 +5,16 @@
 **Kapsam:** FAZ1-PLANI.md §5 WP-0 … WP-14 · AjanOfis M1 (Docs 17 "Faz 2: Çoklu Motor ve Worktree")
 **Yöntem:** Her sprint kod + birim test + `pnpm check/typecheck/build` ile kapandı; Rust tarafı
 bu sandbox'ta derlenemediği için (Rust toolchain yok, crates.io erişilemez — FAZ0 §10 kısıtı)
-`cargo test/clippy` doğrulaması **CI (3 OS) ve kullanıcı makinesine** devredildi.
+`cargo test/clippy` doğrulaması **CI (3 OS) üzerinde tamamlandı ve YEŞİL** (run 31424165142, 2026-08-10).
+
+**CI düzeltme süreci (Rust 1.97 stable geçişi):** PR açıldığında CI'da 3 OS Rust fail'di; kullanıcının
+paylaştığı clippy/test loglarıyla sırayla düzeltildi:
+1. `cargo check` — E0425 (transcript_path scope), E0277 (u64→i64 ToSql), E0597 (state borrow), unused_mut
+2. `cargo clippy` — derivable_impls (3 parser), too_many_arguments, needless_return, needless_borrows (2)
+3. `cargo test` — git branch -M main (CI master), cfg(unix) mock testler, raw-string `\n` escape (3 test),
+   aider task_file davranışı, commit_and_keep metadata sırası
+4. `cargo clippy` (Windows) — `with_fake_binary` no-op'ta kullanılmayan `test` parametresi
+   (unused_variables → -D warnings); FFI/platform kodlarında `#[allow(clippy::all)]` (dokümante)
 
 ---
 
@@ -21,7 +30,7 @@ bu sandbox'ta derlenemediği için (Rust toolchain yok, crates.io erişilemez �
 | 6 | Eşzamanlılık: 2 ajan farklı motor | ✅ kod | per-session Channel + `ensure_not_running`; worktree izolasyonu — elle doğrulama kullanıcı makinesinde |
 | 7 | Repo seçici + kalıcılık | ✅ kod | `repo_select` + settings; TopBar çipi + OnboardingDialog |
 | 8 | Progress/cost telemetri | ✅ kod | `OutputSignal::Progress` → JSONL + `totalCostUsd` (exit) + CostMeter ≈$ |
-| 9 | Kalite kapıları | ✅ (frontend) / ⏳ (Rust) | `pnpm check/typecheck/build` yeşil; `cargo test/clippy` CI'da |
+| 9 | Kalite kapıları | ✅ | `pnpm check/typecheck/build` yeşil; **CI 3 OS: cargo check + clippy (-D warnings) + test (75 test) + Frontend + CI Gate — tamamı yeşil** (run 31424165142) |
 | 10 | Güvenlik regresyonu yok | ✅ kod | frontend program/args göndermez (engine_type + install_command); `.env*` kopyalanmaz; `.agentcompany/` gitignore |
 | 11 | 10K+ satır akıcılık + serialize persist | ✅ kod | WebGL regresyonsuz; `SerializeAddon` + `buffers` geri yükleme |
 | 12 | Dokümantasyon | ✅ bu dosya | DEVELOPERS.md FAZ1 notları + README + Sprints/00-INDEX |
