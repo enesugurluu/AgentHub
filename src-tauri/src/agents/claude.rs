@@ -13,8 +13,8 @@ use std::time::Duration;
 use portable_pty::{CommandBuilder, native_pty_system, PtySize};
 
 use crate::pty::adapters::{
-  spawn_pty_isolated, stop_child_tree, CliSpawnOptions, DetectResult, EngineAdapter,
-  EngineMetadata, HealthReport, ResourceUtil, SpawnedPty,
+  spawn_pty_isolated, stop_child_tree, DetectResult, EngineAdapter, EngineMetadata, HealthReport,
+  ResourceUtil, SpawnOptions, SpawnedPty,
 };
 
 /// Claude Code CLI adaptörü.
@@ -120,9 +120,10 @@ impl EngineAdapter for ClaudeAdapter {
     spawn_pty_isolated(cmd, cols, rows)
   }
 
-  fn spawn_cli(&self, opts: CliSpawnOptions, cols: u16, rows: u16) -> Result<SpawnedPty, String> {
-    let mut cmd = CommandBuilder::new("claude");
-    for arg in &opts.args {
+  fn spawn_cli(&self, opts: SpawnOptions, cols: u16, rows: u16) -> Result<SpawnedPty, String> {
+    let (program, args) = build_claude_command(&opts)?;
+    let mut cmd = CommandBuilder::new(program);
+    for arg in args {
       cmd.arg(arg);
     }
     cmd.cwd(&opts.workdir);
@@ -150,6 +151,49 @@ impl EngineAdapter for ClaudeAdapter {
   }
 }
 
+/// `SpawnOptions` → claude komut satırı (test-only değil: hem `spawn_cli` hem
+/// golden argv testleri buradan beslenir — WP-02/13).
+///
+/// Flag eşlemesi (docs 7.2):
+/// - `non_interactive` → `-p --output-format stream-json` (WP-04 parser girdisi)
+/// - `model` → `--model <v>` · `effort` → `--effort <x>` · budget → `--max-budget-usd`
+/// - `max_turns` → `--max-turns <n>` · `task_file` → içerik prompt argümanı
+pub(crate) fn build_claude_command(opts: &SpawnOptions) -> Result<(String, Vec<String>), String> {
+  let mut args: Vec<String> = Vec::new();
+
+  if opts.non_interactive {
+    args.push("-p".to_string());
+    args.push("--output-format".to_string());
+    args.push("stream-json".to_string());
+  }
+  if let Some(model) = &opts.model {
+    args.push("--model".to_string());
+    args.push(model.clone());
+  }
+  if let Some(effort) = &opts.effort {
+    args.push("--effort".to_string());
+    args.push(effort.as_str().to_string());
+  }
+  if let Some(budget) = opts.max_budget_usd {
+    args.push("--max-budget-usd".to_string());
+    args.push(budget.to_string());
+  }
+  if let Some(turns) = opts.max_turns {
+    args.push("--max-turns".to_string());
+    args.push(turns.to_string());
+  }
+  if let Some(task_file) = &opts.task_file {
+    let content = std::fs::read_to_string(task_file)
+      .map_err(|e| format!("AGENT_TASK.md okunamadı ({}): {e}", task_file.display()))?;
+    args.push(content);
+  }
+  for extra in &opts.args {
+    args.push(extra.clone());
+  }
+
+  Ok(("claude".to_string(), args))
+}
+
 /// Adaptör için yardımcılar (gelecekte codex/gemini aynı deseni kullanır).
 #[allow(dead_code)]
 pub(crate) fn claude_worktree_path(workdir: &Path) -> PathBuf {
@@ -159,4 +203,76 @@ pub(crate) fn claude_worktree_path(workdir: &Path) -> PathBuf {
 #[allow(dead_code)]
 pub(crate) fn claude_timeout() -> Duration {
   Duration::from_secs(30)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::pty::adapters::Effort;
+
+  fn base_opts() -> SpawnOptions {
+    SpawnOptions {
+      workdir: PathBuf::from("/tmp/wt"),
+      env: vec![],
+      args: vec![],
+      model: None,
+      effort: None,
+      max_budget_usd: None,
+      max_turns: None,
+      non_interactive: false,
+      task_file: None,
+    }
+  }
+
+  #[test]
+  fn claude_command_interactive_minimal() {
+    let (program, args) = build_claude_command(&base_opts()).unwrap();
+    assert_eq!(program, "claude");
+    assert!(args.is_empty());
+  }
+
+  #[test]
+  fn claude_command_non_interactive_flags() {
+    let mut opts = base_opts();
+    opts.non_interactive = true;
+    opts.model = Some("sonnet".to_string());
+    opts.effort = Some(Effort::High);
+    opts.max_budget_usd = Some(2.5);
+    opts.max_turns = Some(6);
+    let (_, args) = build_claude_command(&opts).unwrap();
+
+    assert!(args.contains(&"-p".to_string()));
+    assert!(args.contains(&"stream-json".to_string()));
+    assert!(args.windows(2).any(|w| w[0] == "--model" && w[1] == "sonnet"));
+    assert!(args.windows(2).any(|w| w[0] == "--effort" && w[1] == "high"));
+    assert!(args.windows(2).any(|w| w[0] == "--max-budget-usd" && w[1] == "2.5"));
+    assert!(args.windows(2).any(|w| w[0] == "--max-turns" && w[1] == "6"));
+  }
+
+  #[test]
+  fn claude_command_task_file_reads_content() {
+    let dir = tempfile::tempdir().unwrap();
+    let task_file = dir.path().join("AGENT_TASK.md");
+    std::fs::write(&task_file, "görevi tamamla").unwrap();
+    let mut opts = base_opts();
+    opts.task_file = Some(task_file);
+    let (_, args) = build_claude_command(&opts).unwrap();
+    assert!(args.iter().any(|a| a == "görevi tamamla"));
+  }
+
+  #[test]
+  fn claude_command_missing_task_file_errors() {
+    let mut opts = base_opts();
+    opts.task_file = Some(PathBuf::from("/nonexistent/AGENT_TASK.md"));
+    assert!(build_claude_command(&opts).is_err());
+  }
+
+  #[test]
+  fn effort_as_str_matches_cli_values() {
+    assert_eq!(Effort::Low.as_str(), "low");
+    assert_eq!(Effort::Medium.as_str(), "medium");
+    assert_eq!(Effort::High.as_str(), "high");
+    assert_eq!(Effort::XHigh.as_str(), "xhigh");
+    assert_eq!(Effort::Max.as_str(), "max");
+  }
 }

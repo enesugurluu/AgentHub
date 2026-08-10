@@ -10,6 +10,25 @@ export type AgentSpawnResult = {
   executionId: string
 }
 
+/** Zeka/effort seviyesi (claude `--effort`; docs 6.1 Adım 2). */
+export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
+/**
+ * CLI spawn seçenekleri (Rust `SpawnOptions` ile camelCase birebir eşleşir — WP-02).
+ * `workdir`/`env` boş bırakılırsa backend worktree'yi çözer ve doldurur.
+ */
+export type SpawnOptions = {
+  workdir?: string
+  env?: [string, string][]
+  args?: string[]
+  model?: string | null
+  effort?: Effort | null
+  maxBudgetUsd?: number | null
+  maxTurns?: number | null
+  nonInteractive?: boolean
+  taskFile?: string | null
+}
+
 export type EngineMetadata = {
   engineType: string
   version: string | null
@@ -25,6 +44,45 @@ export type AgentRecord = {
   status: string
   worktreePath: string | null
   createdAt: string | null
+  avatarColor: string | null
+  configJson: string | null
+  hiredAt: string | null
+  firedAt: string | null
+}
+
+export type PermissionProfile = 'full' | 'standard' | 'limited' | 'custom'
+
+/** İşe alım payload'ı (docs 6.1 Adım 2/3) — Rust `HirePayload` ile camelCase eşleşir. */
+export type HirePayload = {
+  name: string
+  role: string
+  motor: string
+  model?: string | null
+  effort?: string | null
+  maxBudgetUsd?: number | null
+  maxTurns?: number | null
+  permissionsProfile: PermissionProfile
+  systemPrompt?: string | null
+  avatarColor?: string | null
+  skills: string[]
+  mcpServers: string[]
+}
+
+/** İşten çıkarma seçenekleri (docs 6.2). Worktree davranışı WP-05'te bağlanır. */
+export type FireOptions = {
+  worktreeAction: 'delete' | 'keep' | 'commit_and_keep'
+  moveOpenTasksToBacklog: boolean
+  keepLogs: boolean
+}
+
+/** Kısmi güncelleme (None = alana dokunma). */
+export type AgentPatch = {
+  name?: string | null
+  role?: string | null
+  motor?: string | null
+  model?: string | null
+  status?: string | null
+  avatarColor?: string | null
 }
 
 export type WorktreeInfo = {
@@ -91,11 +149,19 @@ export function agentSpawn(args: {
 export function agentSpawnEngine(args: {
   agentId: string
   engineType: string
+  options?: SpawnOptions
   cols: number
   rows: number
   channel: Channel<PtyEvent>
 }): Promise<AgentSpawnResult> {
-  return invoke<AgentSpawnResult>('agent_spawn_engine', args)
+  return invoke<AgentSpawnResult>('agent_spawn_engine', {
+    agentId: args.agentId,
+    engineType: args.engineType,
+    options: args.options ?? {},
+    cols: args.cols,
+    rows: args.rows,
+    channel: args.channel,
+  })
 }
 
 export function agentStop(args: { agentId: string; executionId: string }): Promise<void> {
@@ -134,6 +200,40 @@ export function ptyAdapterMetadata(id: string): Promise<EngineMetadata> {
 
 export function listAgents(): Promise<AgentRecord[]> {
   return invoke<AgentRecord[]>('agent_list_all')
+}
+
+/** Yeni ajan kaydı (Hire Wizard — WP-07). */
+export function agentHire(payload: HirePayload): Promise<AgentRecord> {
+  return invoke<AgentRecord>('agent_hire', { payload })
+}
+
+/** Ajanı işten çıkar (Fire onay akışı — WP-08). */
+export function agentFire(id: number, options: FireOptions): Promise<AgentRecord> {
+  return invoke<AgentRecord>('agent_fire', { id, options })
+}
+
+/** Kalıcı silme — yalnızca `fired` kayıtlar. */
+export function agentDelete(id: number): Promise<void> {
+  return invoke('agent_delete', { id })
+}
+
+/** Kısmi güncelleme. */
+export function agentUpdate(id: number, patch: AgentPatch): Promise<AgentRecord> {
+  return invoke<AgentRecord>('agent_update', { id, patch })
+}
+
+/** Tek ajan kaydı. */
+export function agentGet(id: number): Promise<AgentRecord> {
+  return invoke<AgentRecord>('agent_get', { id })
+}
+
+/** settings tablosu (repo_path, main_branch, ... — WP-06). */
+export function settingsGet(key: string): Promise<string | null> {
+  return invoke<string | null>('settings_get', { key })
+}
+
+export function settingsSet(key: string, value: string): Promise<void> {
+  return invoke('settings_set', { key, value })
 }
 
 export function worktreeCreate(args: {

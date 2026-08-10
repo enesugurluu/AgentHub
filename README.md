@@ -6,8 +6,9 @@ AjanOfis (AjanŞirket) vizyonunun Tauri 2 masaüstü uygulaması — çoklu AI C
 (Claude Code, ileride Codex/Gemini/OpenCode...) izole git worktree'lerinde yöneten
 bir "ajan şirketi" yönetim paneli.
 
-> **Durum: FAZ0** — iskelet + PTY motoru + Claude Code adaptörü + SQLite + terminal UI.
-> Detaylı plan ve mevcut durum analizi: [`FAZ0-DURUM-ANALIZI-VE-UYGULAMA-PLANI.md`](./FAZ0-DURUM-ANALIZI-VE-UYGULAMA-PLANI.md)
+> **Durum: FAZ0 ✅** — iskelet + PTY motoru + Claude Code adaptörü + SQLite + terminal UI.
+> FAZ0 durum analizi: [`FAZ0-DURUM-ANALIZI-VE-UYGULAMA-PLANI.md`](./FAZ0-DURUM-ANALIZI-VE-UYGULAMA-PLANI.md)
+> Sıradaki: **FAZ1 (M1)** — çoklu motor, worktree otomasyonu, işe alım: [`FAZ1-PLANI.md`](./FAZ1-PLANI.md)
 
 ## Teknoloji Yığını
 
@@ -70,7 +71,7 @@ izole worktree'lerde çalışır.
 ## Yol Haritası
 
 - ✅ **FAZ0** — iskelet, PTY + adaptör registry, worktree, Claude adaptörü, SQLite, terminal UI
-- ⏳ **Faz 2 (M1)** — Codex/Gemini/OpenCode adaptörleri, işe alım sihirbazı, ofis katı SVG, çoklu oturum
+- ⏳ **FAZ1 (M1)** — Codex/Gemini/OpenCode/Aider adaptörleri, işe alım sihirbazı, worktree otomasyonu, ofis katı SVG — [plan](./FAZ1-PLANI.md)
 - ⏳ **Faz 3 (M2)** — Kanban, CEO orkestrasyonu, onay akışı + policy engine, maliyet takibi
 - ⏳ **Faz 4 (M3)** — Bilgi grafı (SQLite + FTS5 + sqlite-vec), Sigma.js, yerel embedding
 - ⏳ **Faz 5 (M4)** — MCP Hub (`rmcp`), toplantı odası, paketleme + auto-updater

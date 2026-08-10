@@ -9,7 +9,7 @@ use self::{
   worktree::build_command,
 };
 use crate::db::AppDb;
-use crate::pty::adapters::{CliSpawnOptions, EngineMetadata};
+use crate::pty::adapters::{EngineMetadata, SpawnOptions};
 use crate::worktree::resolve_worktree_path_for_agent;
 
 #[derive(Serialize)]
@@ -189,7 +189,10 @@ pub fn agent_spawn(
 }
 
 /// Motor tipine göre spawn (ör. `engine_type = "claude"`): adaptör komutu kendi
-/// kurallarıyla kurar (CliSpawnOptions). `program/args` frontend'den gelmez.
+/// kurallarıyla kurar (`SpawnOptions`). `program/args` frontend'den gelmez.
+///
+/// `options.workdir` boşsa backend worktree'yi çözer ve doldurur (FAZ0 davranışı);
+/// `env` boşsa ajan ortam değişkenleri eklenir.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Tauri state/channel enjeksiyonu argüman sayısını şişirir
 pub fn agent_spawn_engine(
@@ -198,6 +201,7 @@ pub fn agent_spawn_engine(
   adapters: State<EngineAdapterRegistry>,
   agent_id: String,
   engine_type: String,
+  options: SpawnOptions,
   cols: u16,
   rows: u16,
   channel: Channel<PtyEvent>,
@@ -215,11 +219,14 @@ pub fn agent_spawn_engine(
   let repo_path = resolve_repo_root();
   let worktree_path = resolve_agent_workdir(&repo_path, &agent_id);
 
-  let opts = CliSpawnOptions {
-    workdir: std::path::PathBuf::from(&worktree_path),
-    env: agent_envs(&agent_id, &worktree_path),
-    args: Vec::new(),
-  };
+  // Frontend workdir/env göndermemişse backend tamamlar.
+  let mut opts = options;
+  if opts.workdir.as_os_str().is_empty() {
+    opts.workdir = std::path::PathBuf::from(&worktree_path);
+  }
+  if opts.env.is_empty() {
+    opts.env = agent_envs(&agent_id, &worktree_path);
+  }
   let spawned = adapter.spawn_cli(opts, cols, rows)?;
 
   let execution_id = Uuid::new_v4().to_string();

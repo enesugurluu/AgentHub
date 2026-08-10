@@ -44,18 +44,55 @@ pub struct HealthReport {
     pub operational_status: String,
 }
 
+/// Zeka/effort seviyesi (docs 6.1 Adım 2; `--effort` flag'i).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Effort {
+  Low,
+  Medium,
+  High,
+  XHigh,
+  Max,
+}
+
+impl Effort {
+  pub fn as_str(&self) -> &'static str {
+    match self {
+      Self::Low => "low",
+      Self::Medium => "medium",
+      Self::High => "high",
+      Self::XHigh => "xhigh",
+      Self::Max => "max",
+    }
+  }
+}
+
 /// CLI ajanlarını (`claude`, `codex`, ...) spawn ederken adaptöre verilen seçenekler.
 ///
 /// Komut yapısı (program, flag'ler) adaptörün kendi sorumluluğundadır — her CLI'nin
-/// kurulum/fleg eşleşmesi farklıdır (AjanOfis docs Bölüm 7.2).
-#[derive(Debug, Clone)]
-pub struct CliSpawnOptions {
-  /// Ajanın çalışacağı dizin (worktree yolu).
+/// kurulum/flag eşleşmesi farklıdır (AjanOfis docs Bölüm 7.1/7.2). Desteklenmeyen
+/// alanlar adaptörün capability listesine göre yok sayılır (WP-13).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SpawnOptions {
+  /// Ajanın çalışacağı dizin (worktree yolu). Boşsa backend doldurur (pty/mod.rs).
   pub workdir: PathBuf,
   /// Sürece enjekte edilecek ortam değişkenleri.
   pub env: Vec<(String, String)>,
   /// Ek argümanlar (ör. `-p`, `--model`, `--max-budget-usd`).
   pub args: Vec<String>,
+  /// Model seçimi (motor destekliyorsa; ör. "sonnet").
+  pub model: Option<String>,
+  /// Zeka seviyesi (claude `--effort`).
+  pub effort: Option<Effort>,
+  /// Görev bütçesi (USD; claude `--max-budget-usd`).
+  pub max_budget_usd: Option<f64>,
+  /// Maksimum tur (claude `--max-turns`).
+  pub max_turns: Option<u32>,
+  /// Interaktif olmayan mod (`claude -p` / `codex exec` / `aider --message`).
+  pub non_interactive: bool,
+  /// Görev tanımı dosyası (AGENT_TASK.md — WP-10). İçeriği prompt olarak iletilir.
+  pub task_file: Option<PathBuf>,
 }
 
 /// Pluggable backend for creating and managing PTY-backed engine processes.
@@ -106,7 +143,7 @@ pub trait EngineAdapter: Send + Sync + 'static {
   /// Varsayılan: desteklenmiyor — sadece CLI adaptörleri override eder.
   fn spawn_cli(
     &self,
-    _opts: CliSpawnOptions,
+    _opts: SpawnOptions,
     _cols: u16,
     _rows: u16,
   ) -> Result<SpawnedPty, String> {
