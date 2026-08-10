@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   type EngineMetadata,
   isTauriRuntime,
-  ptyFindByEngineType,
+  ptyAdapterMetadata,
   ptyListEngineAdapters,
 } from '@/lib/ipc'
 
@@ -43,11 +43,8 @@ export function SettingsDialog({ trigger }: { trigger: React.ReactNode }) {
       const infos = await Promise.all(
         ids.map(async (id) => {
           try {
-            // Adaptör id → engine_type eşlemesi (registry metadata'sı ile aynı).
-            const engineType =
-              id === 'portable-pty-native' ? 'pty' : id === 'claude-code' ? 'claude' : id
-            const metadata = await ptyFindByEngineType(engineType)
-            return { id, metadata: metadata[0] ?? null }
+            const metadata = await ptyAdapterMetadata(id)
+            return { id, metadata }
           } catch {
             return { id, metadata: null }
           }
@@ -101,6 +98,11 @@ export function SettingsDialog({ trigger }: { trigger: React.ReactNode }) {
                 >
                   <span className="font-mono text-xs">{adapter.id}</span>
                   <span className="ml-auto flex items-center gap-2">
+                    {adapter.metadata?.engineType && (
+                      <Badge variant="outline" className="font-mono">
+                        {adapter.metadata.engineType}
+                      </Badge>
+                    )}
                     {adapter.metadata?.version && (
                       <Badge variant="secondary" className="font-mono">
                         v{adapter.metadata.version}

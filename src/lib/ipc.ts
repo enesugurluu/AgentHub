@@ -127,6 +127,11 @@ export function ptyFindByEngineType(engineType: string): Promise<EngineMetadata[
   return invoke<EngineMetadata[]>('pty_find_by_engine_type', { engineType })
 }
 
+/** Tek adaptörün metadata'sı — Settings UI id → metadata çözümlemesi. */
+export function ptyAdapterMetadata(id: string): Promise<EngineMetadata> {
+  return invoke<EngineMetadata>('pty_adapter_metadata', { id })
+}
+
 export function listAgents(): Promise<AgentRecord[]> {
   return invoke<AgentRecord[]>('agent_list_all')
 }

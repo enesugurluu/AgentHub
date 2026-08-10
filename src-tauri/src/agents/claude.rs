@@ -90,9 +90,14 @@ impl EngineAdapter for ClaudeAdapter {
     let message = res.err();
 
     // Sistemsel kaynak kullanımı (sysinfo — AjanOfis docs Bölüm 3.3).
+    // CPU yüzdesi iki ölçüm arasındaki delta'dan hesaplanır; tek refresh anlamlı
+    // değer üretmez (hep ~0). Kısa bir aralıkla iki kez örneklenir.
     let mut sys = sysinfo::System::new();
     sys.refresh_cpu_usage();
+    std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
+    sys.refresh_cpu_usage();
     sys.refresh_memory();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
     HealthReport {
       ok,
@@ -101,7 +106,7 @@ impl EngineAdapter for ClaudeAdapter {
       resource_utilization: Some(ResourceUtil {
         cpu_percent: Some(sys.global_cpu_usage()),
         memory_bytes: Some(sys.used_memory()),
-        process_count: None,
+        process_count: Some(sys.processes().len() as u32),
       }),
       operational_status: if ok {
         "operational".to_string()

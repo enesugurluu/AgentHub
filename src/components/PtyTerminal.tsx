@@ -38,9 +38,11 @@ function defaultShellProgram(): { program: string; args: string[] } {
 export function PtyTerminal({
   agentId,
   engine: initialEngine = 'pty',
+  isActive = true,
 }: {
   agentId: string
   engine?: EngineChoice
+  isActive?: boolean
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
@@ -145,9 +147,12 @@ export function PtyTerminal({
     let resizeObserver: ResizeObserver | null = null
     if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
       resizeObserver = new ResizeObserver(() => {
+        const el = containerRef.current
         const term = terminalRef.current
         const fit = fitAddonRef.current
-        if (!term || !fit) return
+        if (!el || !term || !fit) return
+        // Gizli sekme (display:none): fit() ölçülebilir boyut bulamaz, atla.
+        if (el.getBoundingClientRect().width === 0) return
         try {
           fit.fit()
         } catch {
@@ -176,6 +181,33 @@ export function PtyTerminal({
       searchAddonRef.current = null
     }
   }, [agentId])
+
+  // ---- Sekme tekrar görünür olunca: boyut senkronu + scroll -----------------
+  useEffect(() => {
+    if (!isActive) return
+    const raf = requestAnimationFrame(() => {
+      const term = terminalRef.current
+      const fit = fitAddonRef.current
+      if (!term || !fit) return
+      try {
+        fit.fit()
+      } catch {
+        // container henüz ölçülebilir değil
+      }
+      term.scrollToBottom()
+      // Gizliyken değişmiş olabilecek boyutu backend PTY'sine yeniden bildir.
+      const sessionState = useTerminalStore.getState().sessions[agentId]
+      if (sessionState?.executionId && sessionState.status === 'running') {
+        void ptyResize({
+          agentId,
+          executionId: sessionState.executionId,
+          cols: term.cols,
+          rows: term.rows,
+        }).catch((e) => console.error('resize failed:', e))
+      }
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [isActive, agentId])
 
   // ---- stdin köprüsü --------------------------------------------------------
   useEffect(() => {
