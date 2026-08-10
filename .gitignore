@@ -27,3 +27,7 @@ src-tauri/gen
 *.njsproj
 *.sln
 *.sw?
+
+# Claude Code kişisel ayarlar (takımla paylaşılmaz)
+CLAUDE.local.md
+.claude/settings.local.json

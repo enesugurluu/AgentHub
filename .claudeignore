@@ -1,0 +1,35 @@
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Kişisel Claude ayarları
+.claude/settings.local.json
+CLAUDE.local.md
+
+# Bağımlılıklar
+node_modules/
+.pnpm-store/
+.pnpm-cache/
+
+# Build çıktıları
+dist/
+build/
+src-tauri/target/
+src-tauri/gen/
+
+# Büyük veri
+*.sqlite
+*.db
+data/
+backups/
+*.jsonl
+
+# Hassas
+.git/
+.ssh/
+.aws/
+.gnupg/

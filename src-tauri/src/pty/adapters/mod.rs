@@ -1,8 +1,9 @@
 use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::time::Duration;
-use serde::{Deserialize, Serialize};
 
 use portable_pty::CommandBuilder;
+use serde::{Deserialize, Serialize};
 
 mod portable_pty_native;
 
@@ -36,6 +37,20 @@ pub struct HealthReport {
     pub uptime: Option<Duration>,
     pub resource_utilization: Option<ResourceUtil>,
     pub operational_status: String,
+}
+
+/// CLI ajanlarını (`claude`, `codex`, ...) spawn ederken adaptöre verilen seçenekler.
+///
+/// Komut yapısı (program, flag'ler) adaptörün kendi sorumluluğundadır — her CLI'nin
+/// kurulum/fleg eşleşmesi farklıdır (AjanOfis docs Bölüm 7.2).
+#[derive(Debug, Clone)]
+pub struct CliSpawnOptions {
+  /// Ajanın çalışacağı dizin (worktree yolu).
+  pub workdir: PathBuf,
+  /// Sürece enjekte edilecek ortam değişkenleri.
+  pub env: Vec<(String, String)>,
+  /// Ek argümanlar (ör. `-p`, `--model`, `--max-budget-usd`).
+  pub args: Vec<String>,
 }
 
 /// Pluggable backend for creating and managing PTY-backed engine processes.
@@ -82,6 +97,37 @@ pub trait EngineAdapter: Send + Sync + 'static {
 
   fn spawn(&self, cmd: CommandBuilder, cols: u16, rows: u16) -> Result<SpawnedPty, String>;
 
+  /// CLI ajanlarını (claude, codex, ...) kendi komut kurallarıyla spawn eder.
+  /// Varsayılan: desteklenmiyor — sadece CLI adaptörleri override eder.
+  fn spawn_cli(
+    &self,
+    _opts: CliSpawnOptions,
+    _cols: u16,
+    _rows: u16,
+  ) -> Result<SpawnedPty, String> {
+    Err(format!(
+      "adapter '{}' does not support CLI spawning",
+      self.id()
+    ))
+  }
+
+  /// PTY boyutunu günceller (xterm fit → `pty_resize` IPC).
+  fn resize(
+    &self,
+    child: &mut (dyn portable_pty::Child + Send + Sync),
+    cols: u16,
+    rows: u16,
+  ) -> Result<(), String> {
+    child
+      .resize(portable_pty::PtySize {
+        rows,
+        cols,
+        pixel_width: 0,
+        pixel_height: 0,
+      })
+      .map_err(|e| e.to_string())
+  }
+
   fn stop(&self, child: &mut (dyn portable_pty::Child + Send + Sync)) -> Result<(), String>;
 }
 
@@ -91,4 +137,102 @@ pub struct SpawnedPty {
   pub child: Box<dyn portable_pty::Child + Send + Sync>,
   #[cfg(target_os = "windows")]
   pub job_handle: Option<isize>,
+}
+
+/// Ortak PTY spawn yardımcısı: `portable-pty` ile süreç açar ve Windows'ta
+/// Job Objects (KILL_ON_JOB_CLOSE) ile child ağacını izole eder.
+/// Tüm adaptörler bu fonksiyonu kullanır (izolasyon tek noktada).
+pub(crate) fn spawn_pty_isolated(
+  cmd: CommandBuilder,
+  cols: u16,
+  rows: u16,
+) -> Result<SpawnedPty, String> {
+  use portable_pty::{native_pty_system, PtySize};
+
+  let pty_system = native_pty_system();
+  let pair = pty_system
+    .openpty(PtySize {
+      rows,
+      cols,
+      pixel_width: 0,
+      pixel_height: 0,
+    })
+    .map_err(|e| e.to_string())?;
+
+  let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+
+  #[cfg(target_os = "windows")]
+  {
+    use std::mem;
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::System::JobObjects::{
+      AssignProcessToJobObject, CreateJobObjectW, SetInformationJobObject,
+      JobObjectExtendedLimitInformation, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+      JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+    use windows_sys::Win32::System::Threading::{
+      OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
+    };
+
+    let mut final_job_handle: Option<isize> = None;
+
+    if let Some(pid) = child.process_id() {
+      unsafe {
+        let job: HANDLE = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+        if job != 0 {
+          let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = mem::zeroed();
+          info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+
+          let res = SetInformationJobObject(
+            job,
+            JobObjectExtendedLimitInformation,
+            &info as *const _ as *const std::ffi::c_void,
+            mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+          );
+
+          if res != 0 {
+            let proc_handle = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid);
+            if proc_handle != 0 {
+              let assign_res = AssignProcessToJobObject(job, proc_handle);
+              CloseHandle(proc_handle);
+              if assign_res == 0 {
+                // Failed to assign. Kill the process immediately and return error.
+                let _ = child.kill();
+                let _ = child.wait();
+                CloseHandle(job);
+                return Err("Failed to assign process to Job Object".to_string());
+              }
+
+              final_job_handle = Some(job as isize);
+            } else {
+               let _ = child.kill();
+               let _ = child.wait();
+               CloseHandle(job);
+               return Err("Failed to open process for job assignment".to_string());
+            }
+          } else {
+               let _ = child.kill();
+               let _ = child.wait();
+               CloseHandle(job);
+               return Err("Failed to set job object information".to_string());
+          }
+        } else {
+           let _ = child.kill();
+           let _ = child.wait();
+           return Err("Failed to create job object".to_string());
+        }
+      }
+    }
+  }
+
+  let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+  let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+
+  Ok(SpawnedPty {
+    reader,
+    writer,
+    child,
+    #[cfg(target_os = "windows")]
+    job_handle: final_job_handle,
+  })
 }

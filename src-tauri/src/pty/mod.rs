@@ -1,13 +1,16 @@
+use serde::Serialize;
+use tauri::ipc::Channel;
 use tauri::{AppHandle, State};
 use uuid::Uuid;
-use serde::Serialize;
 
 use self::{
+  adapters::EngineAdapter,
   registry::{EngineAdapterQuery, EngineAdapterRegistry, PtyManager, PtySession},
-  runtime::start_output_pump,
+  runtime::{start_output_pump, PtyEvent},
   worktree::build_command,
 };
-use crate::pty::adapters::EngineMetadata;
+use crate::db::AppDb;
+use crate::pty::adapters::{CliSpawnOptions, EngineMetadata};
 use crate::worktree::resolve_worktree_path_for_agent;
 
 #[derive(Serialize)]
@@ -21,6 +24,26 @@ pub mod adapters;
 pub mod registry;
 pub mod runtime;
 pub mod worktree;
+
+/// Ajanın çalışacağı dizini çözer: önce ajanın yönetilen worktree'si,
+/// yoksa repo köküne geri düşer (FAZ0 davranışı).
+fn resolve_agent_workdir(repo_path: &str, agent_id: &str) -> String {
+  match resolve_worktree_path_for_agent(repo_path, agent_id) {
+    Ok(path) => path,
+    Err(e) => {
+      tracing::warn!(agent_id, "worktree bulunamadı, repo köküne düşülüyor: {e}");
+      repo_path.to_string()
+    }
+  }
+}
+
+/// Ajan için ortam değişkenleri (execution izolasyonu).
+fn agent_envs(agent_id: &str, worktree_path: &str) -> Vec<(String, String)> {
+  vec![
+    ("AGENTHUB_AGENT_ID".to_string(), agent_id.to_string()),
+    ("AGENTHUB_WORKTREE".to_string(), worktree_path.to_string()),
+  ]
+}
 
 #[tauri::command]
 pub fn pty_list_engine_adapters(
@@ -42,9 +65,7 @@ pub fn pty_list_engine_adapters(
 }
 
 #[tauri::command]
-pub fn pty_list_all_ids(
-  adapters: State<EngineAdapterRegistry>,
-) -> Result<Vec<String>, String> {
+pub fn pty_list_all_ids(adapters: State<EngineAdapterRegistry>) -> Result<Vec<String>, String> {
   adapters.list_ids()
 }
 
@@ -76,6 +97,7 @@ pub fn pty_find_by_version(
   Ok(matches.into_iter().map(|a| a.metadata()).collect())
 }
 
+/// Genel shell/PTY spawn (frontend'den program+args alır).
 #[tauri::command]
 pub fn agent_spawn(
   app: AppHandle,
@@ -86,26 +108,107 @@ pub fn agent_spawn(
   args: Vec<String>,
   cols: u16,
   rows: u16,
+  channel: Channel<PtyEvent>,
 ) -> Result<AgentSpawnResult, String> {
-  // In a real scenario, this would be resolved from the backend agent registry.
-  // We resolve the worktree securely without trusting the frontend.
-  let repo_path = std::env::current_dir().unwrap_or_default().to_string_lossy().to_string();
-  let worktree_path = resolve_worktree_path_for_agent(&repo_path, &agent_id)?;
+  // Worktree güvenli şekilde backend'de çözülür; frontend'e güvenilmez.
+  let repo_path = std::env::current_dir()
+    .unwrap_or_default()
+    .to_string_lossy()
+    .to_string();
+  let worktree_path = resolve_agent_workdir(&repo_path, &agent_id);
 
-  let envs = vec![
-    ("AGENTHUB_AGENT_ID".to_string(), agent_id.clone()),
-    ("AGENTHUB_WORKTREE".to_string(), worktree_path.clone()),
-  ];
-
+  let envs = agent_envs(&agent_id, &worktree_path);
   let cmd = build_command(program, args, Some(worktree_path), envs);
+
   let adapter = adapters
     .select_default()?
     .ok_or_else(|| "no PTY engine adapter available".to_string())?;
   let adapter_id = adapter.id().to_string();
   let spawned = adapter.spawn(cmd, cols, rows)?;
 
-  let id = agent_id.clone();
   let execution_id = Uuid::new_v4().to_string();
+  register_session(
+    &app,
+    &manager,
+    &agent_id,
+    &execution_id,
+    &adapter_id,
+    spawned,
+    channel,
+    "spawn",
+  )?;
+
+  Ok(AgentSpawnResult {
+    agent_id,
+    execution_id,
+  })
+}
+
+/// Motor tipine göre spawn (ör. `engine_type = "claude"`): adaptör komutu kendi
+/// kurallarıyla kurar (CliSpawnOptions). `program/args` frontend'den gelmez.
+#[tauri::command]
+pub fn agent_spawn_engine(
+  app: AppHandle,
+  manager: State<PtyManager>,
+  adapters: State<EngineAdapterRegistry>,
+  agent_id: String,
+  engine_type: String,
+  cols: u16,
+  rows: u16,
+  channel: Channel<PtyEvent>,
+) -> Result<AgentSpawnResult, String> {
+  let adapter = adapters
+    .find_by_engine_type(&engine_type)?
+    .into_iter()
+    .next()
+    .ok_or_else(|| format!("no adapter registered for engine type '{engine_type}'"))?;
+  let adapter_id = adapter.id().to_string();
+
+  let repo_path = std::env::current_dir()
+    .unwrap_or_default()
+    .to_string_lossy()
+    .to_string();
+  let worktree_path = resolve_agent_workdir(&repo_path, &agent_id);
+
+  let opts = CliSpawnOptions {
+    workdir: std::path::PathBuf::from(&worktree_path),
+    env: agent_envs(&agent_id, &worktree_path),
+    args: Vec::new(),
+  };
+  let spawned = adapter.spawn_cli(opts, cols, rows)?;
+
+  let execution_id = Uuid::new_v4().to_string();
+  register_session(
+    &app,
+    &manager,
+    &agent_id,
+    &execution_id,
+    &adapter_id,
+    spawned,
+    channel,
+    "spawn_engine",
+  )?;
+
+  Ok(AgentSpawnResult {
+    agent_id,
+    execution_id,
+  })
+}
+
+/// Ortak oturum kaydı + output pump + DB olay kaydı.
+#[allow(clippy::too_many_arguments)]
+fn register_session(
+  app: &AppHandle,
+  manager: &State<PtyManager>,
+  agent_id: &str,
+  execution_id: &str,
+  adapter_id: &str,
+  spawned: adapters::SpawnedPty,
+  channel: Channel<PtyEvent>,
+  event_type: &str,
+) -> Result<(), String> {
+  let id = agent_id.to_string();
+  let execution_id_owned = execution_id.to_string();
 
   {
     let mut sessions = manager
@@ -120,8 +223,8 @@ pub fn agent_spawn(
     sessions.insert(
       id.clone(),
       PtySession {
-        adapter_id,
-        execution_id: execution_id.clone(),
+        adapter_id: adapter_id.to_string(),
+        execution_id: execution_id_owned.clone(),
         writer: spawned.writer,
         child: spawned.child,
         #[cfg(target_os = "windows")]
@@ -130,16 +233,28 @@ pub fn agent_spawn(
     );
   }
 
-  start_output_pump(app, id.clone(), execution_id.clone(), spawned.reader);
+  if let Ok(db) = app.try_state::<AppDb>() {
+    let payload = serde_json::json!({ "executionId": execution_id, "adapter": adapter_id });
+    let _ = db.record_event(Some(&id), None, event_type, Some(&payload.to_string()));
+  }
 
-  Ok(AgentSpawnResult {
-    agent_id: id,
-    execution_id,
-  })
+  start_output_pump(
+    app.clone(),
+    id,
+    execution_id_owned,
+    spawned.reader,
+    channel,
+  );
+  Ok(())
 }
 
 #[tauri::command]
-pub fn agent_write(manager: State<PtyManager>, agent_id: String, execution_id: String, data: String) -> Result<(), String> {
+pub fn agent_write(
+  manager: State<PtyManager>,
+  agent_id: String,
+  execution_id: String,
+  data: String,
+) -> Result<(), String> {
   use std::io::Write;
 
   let mut sessions = manager
@@ -162,8 +277,47 @@ pub fn agent_write(manager: State<PtyManager>, agent_id: String, execution_id: S
   Ok(())
 }
 
+/// PTY boyutunu backend'e bildirir (xterm fit → ConPTY/POSIX resize).
+#[tauri::command]
+pub fn pty_resize(
+  manager: State<PtyManager>,
+  adapters: State<EngineAdapterRegistry>,
+  agent_id: String,
+  execution_id: String,
+  cols: u16,
+  rows: u16,
+) -> Result<(), String> {
+  let mut sessions = manager
+    .sessions
+    .lock()
+    .map_err(|_| "pty sessions lock poisoned".to_string())?;
+  let session = sessions
+    .get_mut(&agent_id)
+    .ok_or_else(|| "pty session not found".to_string())?;
+
+  if session.execution_id != execution_id {
+    return Err("stale execution ID".to_string());
+  }
+
+  if let Some(adapter) = adapters.get(&session.adapter_id)? {
+    adapter.resize(session.child.as_mut(), cols, rows)
+  } else {
+    // Sessions can outlive adapter registrations during development.
+    session
+      .child
+      .resize(portable_pty::PtySize {
+        rows,
+        cols,
+        pixel_width: 0,
+        pixel_height: 0,
+      })
+      .map_err(|e| e.to_string())
+  }
+}
+
 #[tauri::command]
 pub fn agent_stop(
+  app: AppHandle,
   manager: State<PtyManager>,
   adapters: State<EngineAdapterRegistry>,
   agent_id: String,
@@ -175,11 +329,11 @@ pub fn agent_stop(
       .lock()
       .map_err(|_| "pty sessions lock poisoned".to_string())?;
     if let Some(session) = sessions.get(&agent_id) {
-       if session.execution_id != execution_id {
-           return Err("stale execution ID".to_string());
-       }
+      if session.execution_id != execution_id {
+        return Err("stale execution ID".to_string());
+      }
     } else {
-       return Err("pty session not found".to_string());
+      return Err("pty session not found".to_string());
     }
     sessions.remove(&agent_id)
   };
@@ -191,6 +345,10 @@ pub fn agent_stop(
       // sessions can outlive adapter registrations during development
       let _ = session.child.kill();
       let _ = session.child.wait();
+    }
+
+    if let Ok(db) = app.try_state::<AppDb>() {
+      let _ = db.record_event(Some(&agent_id), None, "stopped", None);
     }
   }
 

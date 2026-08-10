@@ -1,72 +1,186 @@
+import { SearchIcon, SquareIcon, TriangleAlertIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
 import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
+import { SearchAddon } from 'xterm-addon-search'
+import { WebLinksAddon } from 'xterm-addon-web-links'
+import { WebglAddon } from 'xterm-addon-webgl'
 import 'xterm/css/xterm.css'
 
-type PtyOutputEvent = {
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  agentSpawn,
+  agentSpawnEngine,
+  agentStop,
+  agentWrite,
+  createPtyChannel,
+  isTauriRuntime,
+  type PtyEvent,
+  ptyResize,
+} from '@/lib/ipc'
+import { useTerminalStore } from '@/store/terminal'
+
+export type EngineChoice = 'pty' | 'claude'
+
+const ENGINE_LABELS: Record<EngineChoice, string> = {
+  pty: 'Shell (PTY)',
+  claude: 'Claude Code',
+}
+
+function defaultShellProgram(): { program: string; args: string[] } {
+  if (navigator.userAgent.includes('Windows')) {
+    return { program: 'powershell.exe', args: ['-NoLogo'] }
+  }
+  return { program: 'bash', args: ['-l'] }
+}
+
+export function PtyTerminal({
+  agentId,
+  engine: initialEngine = 'pty',
+}: {
   agentId: string
-  executionId: string
-  data: string
-}
-
-type PtyStatusEvent = {
-  agentId: string
-  executionId: string
-  status: string
-}
-
-type AgentSpawnResult = {
-  agentId: string
-  executionId: string
-}
-
-function isTauriRuntime() {
-  return typeof window !== 'undefined' && typeof (window as any).__TAURI_INTERNALS__ !== 'undefined'
-}
-
-export function PtyTerminal({ agentId }: { agentId?: string }) {
+  engine?: EngineChoice
+}) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
-  const defaultAgentId = agentId || "default-agent-id"
-  const [sessionId, setSessionId] = useState<string | null>(null)
-  const [executionId, setExecutionId] = useState<string | null>(null)
-  const [starting, setStarting] = useState(false)
-  const [tauriAvailable] = useState(isTauriRuntime())
+  const searchAddonRef = useRef<SearchAddon | null>(null)
+  const channelRef = useRef<ReturnType<typeof createPtyChannel> | null>(null)
+  const engineRef = useRef<EngineChoice>(initialEngine)
 
+  const [engine, setEngine] = useState<EngineChoice>(initialEngine)
+  const [starting, setStarting] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchText, setSearchText] = useState('')
+  const [tauriAvailable] = useState(isTauriRuntime())
+  const [startError, setStartError] = useState<string | null>(null)
+
+  const session = useTerminalStore((s) => s.sessions[agentId])
+  const setActive = useTerminalStore((s) => s.setActive)
+  const startSession = useTerminalStore((s) => s.startSession)
+  const markRunning = useTerminalStore((s) => s.markRunning)
+  const markError = useTerminalStore((s) => s.markError)
+  const stopSession = useTerminalStore((s) => s.stopSession)
+
+  engineRef.current = engine
+
+  // ---- Terminal kurulumu (bir kez) -----------------------------------------
   useEffect(() => {
     const terminal = new Terminal({
       cursorBlink: true,
       convertEol: true,
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+      fontFamily:
+        'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "JetBrains Mono", monospace',
       fontSize: 13,
-      scrollback: 5000,
+      scrollback: 10000,
+      allowProposedApi: true,
     })
-    const fitAddon = new FitAddon()
 
+    const fitAddon = new FitAddon()
     terminal.loadAddon(fitAddon)
-    terminalRef.current = terminal
     fitAddonRef.current = fitAddon
+
+    // WebGL renderer: 10K+ satır logda akıcı kalır. GPU yoksa canvas'a düşer.
+    try {
+      const webglAddon = new WebglAddon()
+      webglAddon.onContextLoss(() => {
+        // Context kaybında eski renderer'a dön
+        webglAddon.dispose()
+      })
+      terminal.loadAddon(webglAddon)
+    } catch {
+      // WebGL desteklenmiyorsa varsayılan canvas renderer kullanılır.
+    }
+
+    terminal.loadAddon(new WebLinksAddon())
+    const searchAddon = new SearchAddon()
+    terminal.loadAddon(searchAddon)
+    searchAddonRef.current = searchAddon
+
+    terminalRef.current = terminal
 
     if (containerRef.current) {
       terminal.open(containerRef.current)
-      fitAddon.fit()
+      requestAnimationFrame(() => fitAddon.fit())
     }
 
-    const onResize = () => fitAddonRef.current?.fit()
+    // PTY kanalı: backend her olayı sadece bu oturuma gönderir.
+    const channel = createPtyChannel((event: PtyEvent) => {
+      const sessionState = useTerminalStore.getState().sessions[event.agentId]
+      if (!sessionState) return
+      if (sessionState.executionId && event.executionId !== sessionState.executionId) return
+
+      if (event.kind.type === 'output') {
+        const bytes = new Uint8Array(event.kind.data)
+        terminal.write(bytes)
+        useTerminalStore.getState().bumpOutput(event.agentId, bytes.length)
+      } else if (event.kind.type === 'exit') {
+        useTerminalStore.getState().markExited(event.agentId)
+        terminal.writeln('')
+        terminal.writeln(
+          `\x1b[90m[agent ${event.agentId} exited]${event.kind.code !== null ? ` (code ${event.kind.code})` : ''}\x1b[0m`,
+        )
+      }
+    })
+    channelRef.current = channel
+
+    // Klavye: Ctrl/Cmd+Shift+F arama aç/kapa
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault()
+        setSearchOpen((open) => !open)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+
+    const onResize = () => {
+      try {
+        fitAddon.fit()
+      } catch {
+        // container görünür değilse yok say
+      }
+    }
     window.addEventListener('resize', onResize)
 
-    return () => {
-      window.removeEventListener('resize', onResize)
-      terminal.dispose()
+    // Container boyut değişimini izle ve PTY boyutunu backend'e bildir.
+    let resizeObserver: ResizeObserver | null = null
+    if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        const term = terminalRef.current
+        const fit = fitAddonRef.current
+        if (!term || !fit) return
+        try {
+          fit.fit()
+        } catch {
+          return
+        }
+        const sessionState = useTerminalStore.getState().sessions[agentId]
+        if (sessionState?.executionId && sessionState.status === 'running') {
+          void ptyResize({
+            agentId,
+            executionId: sessionState.executionId,
+            cols: term.cols,
+            rows: term.rows,
+          }).catch((e) => console.error('resize failed:', e))
+        }
+      })
+      resizeObserver.observe(containerRef.current)
     }
-  }, [])
 
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('resize', onResize)
+      resizeObserver?.disconnect()
+      terminal.dispose()
+      terminalRef.current = null
+      fitAddonRef.current = null
+      searchAddonRef.current = null
+    }
+  }, [agentId])
+
+  // ---- stdin köprüsü --------------------------------------------------------
   useEffect(() => {
-    if (!sessionId) return
-
     const terminal = terminalRef.current
     if (!terminal) return
 
@@ -75,112 +189,171 @@ export function PtyTerminal({ agentId }: { agentId?: string }) {
         terminal.write(data)
         return
       }
-
-      if (!executionId) return
-      void invoke('agent_write', { agentId: sessionId, executionId, data })
+      const sessionState = useTerminalStore.getState().sessions[agentId]
+      if (!sessionState?.executionId || sessionState.status !== 'running') return
+      void agentWrite({
+        agentId,
+        executionId: sessionState.executionId,
+        data,
+      }).catch((e) => console.error('write failed:', e))
     })
 
     return () => disposable.dispose()
-  }, [sessionId, executionId, tauriAvailable])
+  }, [agentId, tauriAvailable])
 
-  useEffect(() => {
-    if (!tauriAvailable) return
-    let unlistenOutput: (() => void) | undefined
-    let unlistenStatus: (() => void) | undefined
-
-    void listen<PtyOutputEvent>('agent://output', (event) => {
-      if (event.payload.agentId !== sessionId || event.payload.executionId !== executionId) return
-      terminalRef.current?.write(event.payload.data)
-    }).then((fn) => {
-      unlistenOutput = fn
-    })
-
-    void listen<PtyStatusEvent>('agent://status', (event) => {
-      if (event.payload.agentId !== sessionId || event.payload.executionId !== executionId) return
-      if (event.payload.status === "exited") {
-        setSessionId(null)
-        setExecutionId(null)
-      }
-    }).then((fn) => {
-      unlistenStatus = fn
-    })
-
-    return () => {
-      unlistenOutput?.()
-      unlistenStatus?.()
-    }
-  }, [sessionId, executionId, tauriAvailable])
-
+  // ---- Spawn / Stop ----------------------------------------------------------
   const startShell = async () => {
-    if (starting || sessionId) return
+    if (starting || session?.status === 'running') return
     setStarting(true)
+    setStartError(null)
+    setActive(agentId)
 
     try {
+      const terminal = terminalRef.current
+      if (!terminal) return
+      terminal.reset()
+      terminal.writeln('')
+
       if (!tauriAvailable) {
-        terminalRef.current?.reset()
-        terminalRef.current?.writeln('Tauri runtime not detected. Running in local echo mode.')
-        setSessionId('local-echo')
+        terminal.writeln('Tauri runtime not detected. Running in local echo mode.')
+        startSession(agentId, engineRef.current)
+        markRunning(agentId, 'local-echo')
         return
       }
 
-      const terminal = terminalRef.current
-      const cols = terminal?.cols ?? 80
-      const rows = terminal?.rows ?? 24
+      const cols = terminal.cols
+      const rows = terminal.rows
+      startSession(agentId, engineRef.current)
+      setActive(agentId)
 
-      const result = await invoke<AgentSpawnResult>('agent_spawn', {
-        agentId: defaultAgentId,
-        program: 'powershell.exe',
-        args: ['-NoLogo'],
-        cols,
-        rows,
-      })
+      const channel = channelRef.current
+      if (!channel) throw new Error('pty channel not initialized')
 
-      terminal?.reset()
-      setSessionId(result.agentId)
-      setExecutionId(result.executionId)
+      const result =
+        engineRef.current === 'claude'
+          ? await agentSpawnEngine({
+              agentId,
+              engineType: 'claude',
+              cols,
+              rows,
+              channel,
+            })
+          : await agentSpawn({
+              agentId,
+              ...defaultShellProgram(),
+              cols,
+              rows,
+              channel,
+            })
+
+      markRunning(result.agentId, result.executionId)
     } catch (e) {
-      console.error(e)
+      console.error('agent spawn failed:', e)
+      setStartError(String(e))
+      markError(agentId, String(e))
+      const terminal = terminalRef.current
+      terminal?.writeln(`\x1b[31m[spawn error] ${String(e)}\x1b[0m`)
     } finally {
       setStarting(false)
     }
   }
 
   const stopShell = async () => {
-    if (!sessionId || !executionId) return
-    const aId = sessionId
-    const eId = executionId
-    setSessionId(null)
-    setExecutionId(null)
+    if (!session?.executionId) return
+    const aId = agentId
+    const eId = session.executionId
+    stopSession(aId)
     if (!tauriAvailable) return
     try {
-      await invoke('agent_stop', { agentId: aId, executionId: eId })
+      await agentStop({ agentId: aId, executionId: eId })
     } catch (e) {
-      console.error("Failed to stop agent:", e)
+      console.error('Failed to stop agent:', e)
     }
   }
 
+  const running = session?.status === 'running' || session?.status === 'starting'
+
+  const runSearch = () => {
+    if (!searchAddonRef.current || !searchText) return
+    searchAddonRef.current.findNext(searchText, { incremental: true })
+  }
+
   return (
-    <div style={{ display: 'grid', gap: 12 }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <button type="button" onClick={startShell} disabled={starting || !!sessionId}>
-          Start Shell
-        </button>
-        <button type="button" onClick={stopShell} disabled={!sessionId}>
+    <div className="flex h-full min-h-0 flex-col gap-2">
+      <div className="flex items-center gap-2 px-1">
+        <div className="flex items-center gap-1 rounded-md bg-muted p-0.5">
+          {(Object.keys(ENGINE_LABELS) as EngineChoice[]).map((choice) => (
+            <button
+              key={choice}
+              type="button"
+              onClick={() => setEngine(choice)}
+              className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+                engine === choice
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              disabled={running}
+            >
+              {ENGINE_LABELS[choice]}
+            </button>
+          ))}
+        </div>
+
+        <Button size="sm" onClick={startShell} disabled={starting || running}>
+          {starting ? 'Starting…' : running ? 'Running' : 'Start'}
+        </Button>
+        <Button size="sm" variant="outline" onClick={stopShell} disabled={!running}>
+          <SquareIcon className="size-3" />
           Stop
-        </button>
-        <div style={{ fontFamily: 'monospace', fontSize: 12, opacity: 0.8 }}>
-          {sessionId ?? 'no session'}
+        </Button>
+
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-7"
+          onClick={() => setSearchOpen((open) => !open)}
+          title="Search (Ctrl+Shift+F)"
+        >
+          <SearchIcon className="size-3.5" />
+        </Button>
+
+        <div className="ml-auto flex items-center gap-2 font-mono text-xs text-muted-foreground">
+          <Badge variant={running ? 'success' : 'secondary'} className="uppercase">
+            {session?.status ?? 'idle'}
+          </Badge>
+          <span className="tabular-nums">
+            {session ? `${(session.outputBytes / 1024).toFixed(1)} KB` : ''}
+          </span>
         </div>
       </div>
+
+      {searchOpen && (
+        <div className="flex items-center gap-2 px-1">
+          <input
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') runSearch()
+            }}
+            placeholder="Search buffer…"
+            className="h-7 w-56 rounded border border-input bg-transparent px-2 text-xs outline-none focus:border-ring"
+          />
+          <Button size="sm" variant="ghost" onClick={runSearch}>
+            Find
+          </Button>
+        </div>
+      )}
+
+      {startError && (
+        <div className="flex items-center gap-2 px-1 text-xs text-destructive">
+          <TriangleAlertIcon className="size-3.5" />
+          {startError}
+        </div>
+      )}
+
       <div
         ref={containerRef}
-        style={{
-          height: 460,
-          width: '100%',
-          border: '1px solid rgba(255, 255, 255, 0.15)',
-          borderRadius: 8,
-          overflow: 'hidden',
-        }}
+        className="min-h-0 flex-1 overflow-hidden rounded-md border border-border bg-black/60"
       />
     </div>
   )
