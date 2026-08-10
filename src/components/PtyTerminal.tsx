@@ -76,6 +76,7 @@ export function PtyTerminal({ agentId }: { agentId?: string }) {
         return
       }
 
+      if (!executionId) return
       void invoke('agent_write', { agentId: sessionId, executionId, data })
     })
 
