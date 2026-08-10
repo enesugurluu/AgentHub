@@ -232,18 +232,30 @@ pub fn worktree_list(repo_path: String) -> Result<Vec<WorktreeInfo>, String> {
 }
 
 pub fn resolve_worktree_path_for_agent(repo_path: &str, agent_id: &str) -> Result<String, String> {
+    let repo_dir = Path::new(repo_path);
+    let worktrees_root = repo_dir.join(".git").join("agenthub-worktrees");
+    let worktrees_root = worktrees_root
+        .canonicalize()
+        .map_err(|e| format!("Failed to canonicalize worktree root: {e}"))?;
+
     let worktrees = worktree_list(repo_path.to_string())?;
     for wt in worktrees {
         if wt.agent_id == agent_id {
-            // Verify path is within managed agenthub-worktrees and exists
             let wt_path = Path::new(&wt.path);
-            if wt_path.exists() && wt.path.contains("agenthub-worktrees") {
-                if let Ok(canonical) = wt_path.canonicalize() {
-                    return Ok(canonical.to_string_lossy().to_string());
-                }
+            if !wt_path.exists() {
+                continue;
+            }
+
+            let canonical = wt_path
+                .canonicalize()
+                .map_err(|e| format!("Failed to canonicalize worktree path: {e}"))?;
+
+            if canonical.starts_with(&worktrees_root) {
+                return Ok(canonical.to_string_lossy().to_string());
             }
         }
     }
+
     Err(format!("No valid managed worktree found for agent ID {}", agent_id))
 }
 
