@@ -24,6 +24,9 @@ pub struct DetectResult {
     pub detected: bool,
     pub version: Option<String>,
     pub capabilities: Vec<String>,
+    /// Kurulum komutu ipucu (docs 7.5) — UI'da "Kur" butonu bunu gösterir (WP-03/12).
+    #[serde(default)]
+    pub install_hint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -118,7 +121,14 @@ pub trait EngineAdapter: Send + Sync + 'static {
           detected: self.detect(),
           version: self.metadata().version,
           capabilities: self.metadata().capabilities,
+          install_hint: None,
       }
+  }
+
+  /// Kurulum komutu (docs 7.5) — `agent_install_engine` bunu backend'de çözer;
+  /// frontend asla program/args göndermez (FAZ0 S5). Default: tanımlı değil.
+  fn install_command(&self) -> Option<Vec<String>> {
+      None
   }
 
   /// Performs a cheap health check (configuration / dependencies) and returns an
@@ -137,7 +147,12 @@ pub trait EngineAdapter: Send + Sync + 'static {
       }
   }
 
-  fn spawn(&self, cmd: CommandBuilder, cols: u16, rows: u16) -> Result<SpawnedPty, String>;
+  /// Genel PTY spawn'ı. Varsayılan: ortak izolasyonlu yardımcı
+  /// (`spawn_pty_isolated` — Job Object / process group). CLI adaptörleri genelde
+  /// yalnızca `spawn_cli` implement eder; bu default yeterlidir.
+  fn spawn(&self, cmd: CommandBuilder, cols: u16, rows: u16) -> Result<SpawnedPty, String> {
+    spawn_pty_isolated(cmd, cols, rows)
+  }
 
   /// CLI ajanlarını (claude, codex, ...) kendi komut kurallarıyla spawn eder.
   /// Varsayılan: desteklenmiyor — sadece CLI adaptörleri override eder.

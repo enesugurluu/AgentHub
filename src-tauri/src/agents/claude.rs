@@ -6,12 +6,11 @@
 //!
 //! Kurulum notu (docs 03): native installer — `curl -fsSL https://claude.ai/install.sh | bash`
 
-use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::Duration;
 
-use portable_pty::{CommandBuilder, native_pty_system, PtySize};
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
+use crate::agents::{command_from, detect_binary_version, read_task_content};
 use crate::pty::adapters::{
   spawn_pty_isolated, stop_child_tree, DetectResult, EngineAdapter, EngineMetadata, HealthReport,
   ResourceUtil, SpawnOptions, SpawnedPty,
@@ -21,23 +20,9 @@ use crate::pty::adapters::{
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ClaudeAdapter;
 
-/// `claude --version` çıktısını döndürür (kurulu değilse None).
-fn detect_version() -> Option<String> {
-  let output = Command::new("claude").arg("--version").output().ok()?;
-  if !output.status.success() {
-    return None;
-  }
-  let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-  if text.is_empty() {
-    None
-  } else {
-    Some(text)
-  }
-}
-
 impl ClaudeAdapter {
   fn version(&self) -> Option<String> {
-    detect_version()
+    detect_binary_version("claude", &["--version"])
   }
 }
 
@@ -62,7 +47,7 @@ impl EngineAdapter for ClaudeAdapter {
   }
 
   fn detect(&self) -> bool {
-    detect_version().is_some()
+    detect_binary_version("claude", &["--version"]).is_some()
   }
 
   fn detect_info(&self) -> DetectResult {
@@ -70,11 +55,12 @@ impl EngineAdapter for ClaudeAdapter {
       detected: self.detect(),
       version: self.version(),
       capabilities: self.metadata().capabilities,
+      install_hint: Some("curl -fsSL https://claude.ai/install.sh | bash".to_string()),
     }
   }
 
   fn health(&self) -> Result<(), String> {
-    let version = detect_version().ok_or_else(|| {
+    let version = detect_binary_version("claude", &["--version"]).ok_or_else(|| {
       "claude CLI bulunamadı. Kurulum: curl -fsSL https://claude.ai/install.sh | bash".to_string()
     })?;
     // En az 2.1.90 önerilir (güvenlik düzeltmeleri, docs 03).
@@ -122,14 +108,7 @@ impl EngineAdapter for ClaudeAdapter {
 
   fn spawn_cli(&self, opts: SpawnOptions, cols: u16, rows: u16) -> Result<SpawnedPty, String> {
     let (program, args) = build_claude_command(&opts)?;
-    let mut cmd = CommandBuilder::new(program);
-    for arg in args {
-      cmd.arg(arg);
-    }
-    cmd.cwd(&opts.workdir);
-    for (key, value) in &opts.env {
-      cmd.env(key, value);
-    }
+    let cmd = command_from(program, args, &opts);
 
     // PTY'nin gerçekten açılabildiğini spawn öncesi doğrula (sağlık kapısı).
     let pty_system = native_pty_system();
@@ -148,6 +127,14 @@ impl EngineAdapter for ClaudeAdapter {
   fn stop(&self, child: &mut (dyn portable_pty::Child + Send + Sync)) -> Result<(), String> {
     // Unix'te süreç grubu, Windows'ta Job Object ile ağaç temizliği.
     stop_child_tree(child)
+  }
+
+  fn install_command(&self) -> Option<Vec<String>> {
+    Some(vec![
+      "bash".to_string(),
+      "-lc".to_string(),
+      "curl -fsSL https://claude.ai/install.sh | bash".to_string(),
+    ])
   }
 }
 
@@ -182,9 +169,7 @@ pub(crate) fn build_claude_command(opts: &SpawnOptions) -> Result<(String, Vec<S
     args.push("--max-turns".to_string());
     args.push(turns.to_string());
   }
-  if let Some(task_file) = &opts.task_file {
-    let content = std::fs::read_to_string(task_file)
-      .map_err(|e| format!("AGENT_TASK.md okunamadı ({}): {e}", task_file.display()))?;
+  if let Some(content) = read_task_content(&opts.task_file)? {
     args.push(content);
   }
   for extra in &opts.args {
@@ -196,11 +181,6 @@ pub(crate) fn build_claude_command(opts: &SpawnOptions) -> Result<(String, Vec<S
 
 /// Adaptör için yardımcılar (gelecekte codex/gemini aynı deseni kullanır).
 #[allow(dead_code)]
-pub(crate) fn claude_worktree_path(workdir: &Path) -> PathBuf {
-  workdir.join("AGENT_TASK.md")
-}
-
-#[allow(dead_code)]
 pub(crate) fn claude_timeout() -> Duration {
   Duration::from_secs(30)
 }
@@ -208,21 +188,9 @@ pub(crate) fn claude_timeout() -> Duration {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::agents::test_util::base_opts;
   use crate::pty::adapters::Effort;
-
-  fn base_opts() -> SpawnOptions {
-    SpawnOptions {
-      workdir: PathBuf::from("/tmp/wt"),
-      env: vec![],
-      args: vec![],
-      model: None,
-      effort: None,
-      max_budget_usd: None,
-      max_turns: None,
-      non_interactive: false,
-      task_file: None,
-    }
-  }
+  use std::path::PathBuf;
 
   #[test]
   fn claude_command_interactive_minimal() {

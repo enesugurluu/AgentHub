@@ -42,6 +42,7 @@ pub fn run() {
       pty::agent_spawn_engine,
       pty::agent_write,
       pty::agent_stop,
+      pty::agent_install_engine,
       pty::pty_resize,
       pty::pty_list_engine_adapters,
       pty::pty_list_all_ids,

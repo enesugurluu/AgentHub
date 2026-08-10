@@ -3,7 +3,7 @@ use std::{
   sync::{Arc, RwLock},
 };
 
-use crate::agents::ClaudeAdapter;
+use crate::agents::{AiderAdapter, ClaudeAdapter, CodexAdapter, GeminiAdapter, OpencodeAdapter};
 use crate::pty::adapters::{EngineAdapter, PortablePtyAdapter};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,8 +35,12 @@ impl EngineAdapterRegistry {
     let registry = Self::new();
     // Built-in adapters are registered eagerly so the app has at least one adapter.
     let _ = registry.register(Arc::new(PortablePtyAdapter));
-    // CLI ajan adaptörü (Claude Code) — kurulu değilse detect() false döner.
+    // CLI ajan adaptörleri — kurulu değilse detect() false döner (FAZ0: claude; FAZ1 WP-03: +4).
     let _ = registry.register(Arc::new(ClaudeAdapter));
+    let _ = registry.register(Arc::new(CodexAdapter));
+    let _ = registry.register(Arc::new(GeminiAdapter));
+    let _ = registry.register(Arc::new(OpencodeAdapter));
+    let _ = registry.register(Arc::new(AiderAdapter));
     registry
   }
 
@@ -456,6 +460,24 @@ mod tests {
     let ids = reg.list_ids().unwrap();
     assert!(ids.contains(&"portable-pty-native".to_string()));
     assert!(ids.contains(&"claude-code".to_string()));
+  }
+
+  #[test]
+  fn builtins_include_all_faz1_engines() {
+    let reg = EngineAdapterRegistry::with_builtins();
+    let ids = reg.list_ids().unwrap();
+    // FAZ1 WP-03: 6 adaptör kayıtlı (pty + 5 CLI motoru).
+    for id in [
+      "portable-pty-native",
+      "claude-code",
+      "codex-cli",
+      "gemini-cli",
+      "opencode-adapter",
+      "aider-adapter",
+    ] {
+      assert!(ids.contains(&id.to_string()), "eksik adaptör: {id}");
+    }
+    assert_eq!(ids.len(), 6);
   }
 
   #[test]

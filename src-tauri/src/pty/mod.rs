@@ -188,6 +188,78 @@ pub fn agent_spawn(
   })
 }
 
+/// Motor kurulumunu **backend'de çözülen komutla** (adaptörün `install_command()`)
+/// ayrı bir PTY oturumunda çalıştırır (docs 7.5; FAZ0 S5 — frontend program/args göndermez).
+///
+/// Oturum `agent_id = "install-<engine_type>"` ile açılır; Settings "Motorlar"
+/// sekmesindeki kurulum akışı (WP-12) bunu kullanır. Kurulu motor için hata döner.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri state/channel enjeksiyonu argüman sayısını şişirir
+pub fn agent_install_engine(
+  app: AppHandle,
+  manager: State<PtyManager>,
+  adapters: State<EngineAdapterRegistry>,
+  engine_type: String,
+  cols: u16,
+  rows: u16,
+  channel: Channel<PtyEvent>,
+) -> Result<AgentSpawnResult, String> {
+  let agent_id = format!("install-{engine_type}");
+
+  // Aynı motor için eşzamanlı kurulum engellenir (yetim süreç önlemi).
+  ensure_not_running(&manager, &agent_id)?;
+
+  let adapter = adapters
+    .find_by_engine_type(&engine_type)?
+    .into_iter()
+    .next()
+    .ok_or_else(|| format!("no adapter registered for engine type '{engine_type}'"))?;
+
+  if adapter.detect() {
+    return Err(format!("engine '{engine_type}' zaten kurulu"));
+  }
+
+  let install_cmd = adapter
+    .install_command()
+    .ok_or_else(|| format!("engine '{engine_type}' için kurulum komutu tanımlı değil"))?;
+  if install_cmd.is_empty() {
+    return Err("kurulum komutu boş".to_string());
+  }
+
+  let mut cmd = portable_pty::CommandBuilder::new(&install_cmd[0]);
+  for arg in &install_cmd[1..] {
+    cmd.arg(arg);
+  }
+  // Kurulumlar globaldir (npm -g / pip / curl|bash); cwd uygulama çalışma dizinidir.
+  if let Ok(cwd) = std::env::current_dir() {
+    cmd.cwd(cwd);
+  }
+
+  // Kurulum, izolasyonu hazır olan PTY adaptörüyle spawn edilir (Job Object/process group).
+  let pty_adapter = adapters
+    .select_default_for_engine_type("pty")?
+    .ok_or_else(|| "no PTY engine adapter available".to_string())?;
+  let adapter_id = pty_adapter.id().to_string();
+  let spawned = pty_adapter.spawn(cmd, cols, rows)?;
+
+  let execution_id = Uuid::new_v4().to_string();
+  register_session(
+    &app,
+    &manager,
+    &agent_id,
+    &execution_id,
+    &adapter_id,
+    spawned,
+    channel,
+    "install",
+  )?;
+
+  Ok(AgentSpawnResult {
+    agent_id,
+    execution_id,
+  })
+}
+
 /// Motor tipine göre spawn (ör. `engine_type = "claude"`): adaptör komutu kendi
 /// kurallarıyla kurar (`SpawnOptions`). `program/args` frontend'den gelmez.
 ///

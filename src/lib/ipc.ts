@@ -168,6 +168,25 @@ export function agentStop(args: { agentId: string; executionId: string }): Promi
   return invoke('agent_stop', args)
 }
 
+/**
+ * Motor kurulumu (docs 7.5) — komut backend'de adaptörün `install_command()`'undan
+ * çözülür; frontend asla program/args göndermez (FAZ0 S5). Oturum
+ * `install-<engineType>` agentId'siyle terminal sekmesinde akar (WP-12).
+ */
+export function agentInstallEngine(args: {
+  engineType: string
+  cols: number
+  rows: number
+  channel: Channel<PtyEvent>
+}): Promise<AgentSpawnResult> {
+  return invoke<AgentSpawnResult>('agent_install_engine', {
+    engineType: args.engineType,
+    cols: args.cols,
+    rows: args.rows,
+    channel: args.channel,
+  })
+}
+
 export function agentWrite(args: {
   agentId: string
   executionId: string

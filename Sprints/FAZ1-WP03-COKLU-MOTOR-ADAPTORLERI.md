@@ -1,8 +1,17 @@
 # Sprint FAZ1-WP03 — Çoklu Motor Adaptörleri (Codex, Gemini, OpenCode, Aider) + Kurulum
 
 > **Kart:** FAZ1-PLANI.md §5 WP-3 · ADR-3
-> **Takvim:** Hafta 1 · Gün 3–5 (plan: 2026-08-12 → 2026-08-14) · **Süre:** 12–16 sa · **Öncelik:** P0
-> **Durum:** ⏳ Planlandı
+> **Takvim:** Hafta 1 · Gün 3–5 (2026-08-12 → 2026-08-14) · **Süre:** 12–16 sa · **Öncelik:** P0
+> **Durum:** ✅ Kapandı — kod + mock-CLI/golden testler yazıldı; `cargo test` doğrulaması CI/kullanıcı makinesinde (WP-14'te nihai)
+>
+> **Uygulama notları (2026-08-10):**
+> - `spawn()` trait'e **default** eklendi (CLI adaptörleri yalnızca `spawn_cli` implement eder).
+> - `DetectResult.install_hint` + trait `install_command()` eklendi; 5 CLI adaptöründe dolu.
+> - `agent_install_engine` eklendi (backend çözer, `install-<engine>` oturumu, olay `install`).
+> - Mock-CLI matrisi: `with_fake_binary` Unix'te PATH'e sahte binary; Windows'ta no-op
+>   (cfg gövde içinde — fonksiyon her platformda derlenir).
+> - Golden argv: `build_{codex,gemini,opencode,aider}_command` + claude'da refactor.
+> - Aider: `--message` zorunlu (task_file yoksa ve non_interactive ise açıklayıcı hata).
 
 ## 1. Hedef
 

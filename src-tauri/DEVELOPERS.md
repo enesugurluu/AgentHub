@@ -9,6 +9,24 @@
 - **Yeni komutlar:** `agent_spawn_engine` (engine_type bazlı), `pty_resize` (xterm fit → PTY boyutu), `pty_adapter_metadata` (id → metadata), `agent_list_all` (DB).
 - `main.rs` → `lib.rs` + `run()` (Tauri 2 konvansiyonu).
 
+## FAZ1 WP-03 eklemeleri (2026-08)
+
+- **`agents/{codex,gemini,opencode,aider}.rs`** — yeni CLI adaptörleri (docs Bölüm 7.2). Hepsi
+  aynı kalıpta: `detect()` → `--version`; `health()` → sürüm kapısı; `spawn_cli()` → kendi
+  komutunu kurar; `install_command()` → `agent_install_engine` (WP-12 kurulum akışı).
+- **`agents/mod.rs`** — ortak yardımcılar: `detect_binary_version`, `command_from`
+  (SpawnOptions → CommandBuilder), `read_task_content` (AGENT_TASK.md), `test_util`
+  (mock-CLI matrisi: `with_fake_binary` Unix'te PATH'e sahte binary koyar; Windows no-op).
+- **`pty/adapters/mod.rs`** — `DetectResult.install_hint` + trait'e `install_command()`
+  (default None) ve `spawn()` **default** implementasyonu (CLI adaptörleri yalnızca
+  `spawn_cli` yazar).
+- **`pty/mod.rs::agent_install_engine`** — kurulum komutunu backend'de çözer, `pty`
+  adaptörüyle ayrı oturumda çalıştırır (`agent_id = "install-<engine>"`, olay tipi `install`).
+- **Capability kuralı:** budget/turn/effort desteklemeyen motorlar (codex/gemini/opencode/aider)
+  bu capability'leri ilan etmez; `SpawnOptions`'taki alanlar yok sayılır (WP-13'te `supports()` + warn).
+- **Flag matrisi uyarısı:** CLI flag eşleşmeleri uygulama sırasında `--help` ile doğrulanmalı;
+  golden argv testleri yalnızca bizim eşlememizi sabitler (sürüm bağımsız mock).
+
 ## Çalışma dizini / olay kaydı notları
 
 - Spawn cwd'si `AGENTHUB_REPO_PATH` env değişkeniyle override edilebilir; yoksa uygulama sürecinin `current_dir`'i kullanılır (ör. `tauri dev` altında `src-tauri/`). Dialog ile repo seçimi FAZ1'de.
