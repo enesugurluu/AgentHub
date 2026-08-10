@@ -107,8 +107,9 @@ pub(crate) mod test_util {
     #[cfg(not(unix))]
     {
       // Mock matrisi yalnızca Unix; Windows'ta no-op.
-      // `let _ = (name, script)` clippy::let_underscore_untyped üretir → drop() kullan.
-      drop((name, script));
+      // `test` (FnOnce) burada çağrılmaz → unused_variables warning'i olmaması için
+      // üç parametre de drop() ile tüketilir (-D warnings).
+      drop((name, script, test));
     }
   }
 
