@@ -140,6 +140,7 @@ pub fn pty_find_by_version(
 
 /// Genel shell/PTY spawn (frontend'den program+args alır).
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri state/channel enjeksiyonu argüman sayısını şişirir
 pub fn agent_spawn(
   app: AppHandle,
   manager: State<PtyManager>,
@@ -190,6 +191,7 @@ pub fn agent_spawn(
 /// Motor tipine göre spawn (ör. `engine_type = "claude"`): adaptör komutu kendi
 /// kurallarıyla kurar (CliSpawnOptions). `program/args` frontend'den gelmez.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri state/channel enjeksiyonu argüman sayısını şişirir
 pub fn agent_spawn_engine(
   app: AppHandle,
   manager: State<PtyManager>,
