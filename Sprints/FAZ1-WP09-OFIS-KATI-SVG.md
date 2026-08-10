@@ -1,8 +1,15 @@
 # Sprint FAZ1-WP09 — Ofis Katı SVG v1 (AgentDesk + StatusBadge + Zoom/Pan)
 
 > **Kart:** FAZ1-PLANI.md §5 WP-9 · ADR-10, docs 5.4–5.6
-> **Takvim:** Hafta 2 · Gün 11–12 (plan: 2026-08-20 → 2026-08-21) · **Süre:** 10 sa · **Öncelik:** P0
-> **Durum:** ⏳ Planlandı
+> **Takvim:** Hafta 2 · Gün 11–12 (2026-08-20 → 2026-08-21) · **Süre:** 10 sa · **Öncelik:** P0
+> **Durum:** ✅ Kapandı — UI uygulandı; `pnpm check/typecheck/build` yeşil
+>
+> **Uygulama notları (2026-08-10):**
+> - `react-zoom-pan-pinch@4` eklendi; `TransformWrapper` + `ZoomControls` (zoom/pan/sıfırla).
+> - `StatusBadge`: 6 durum (docs 5.4) — renk + lucide ikon + animasyon sınıfı; `resolveDeskStatus` (oturum → durum); `motion-reduce` desteği.
+> - `AgentDesk`: HTML kart (SVG zeminde) — avatar (avatarColor), isim, rol, rozet; klavye erişilebilir (Enter/Space, aria-label).
+> - `OfficeFloor`: SVG zemin (ızgara + dekor), CEO masası merkez, deterministik masa grid'i (3 sütun), boş ofis CTA; `fired` filtresi.
+> - Tıklama → `selectAgent` + `setActive` (terminal sekmesi).
 
 ## 1. Hedef
 
