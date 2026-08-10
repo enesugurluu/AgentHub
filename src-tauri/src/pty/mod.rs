@@ -517,6 +517,12 @@ fn register_session(
   let id = agent_id.to_string();
   let execution_id_owned = execution_id.to_string();
 
+  // JSONL oturum kaydı (docs 12.2; WP-11): ~/.agentcompany/logs/<agent>/manual-<epoch>.jsonl
+  // İç blok DIŞINDA tanımlanır — start_output_pump'a aktarılır (E0425 önlemi).
+  let transcript_path = crate::pty::runtime::transcript::agentcompany_logs_dir().and_then(
+    |base| crate::pty::runtime::transcript::open_transcript(&base, agent_id, "manual").ok(),
+  );
+
   {
     let mut sessions = manager
       .sessions
@@ -532,12 +538,6 @@ fn register_session(
       let _ = child.wait();
       return Err(format!("agent {id} is already running"));
     }
-
-    // JSONL oturum kaydı (docs 12.2; WP-11): ~/.agentcompany/logs/<agent>/manual-<epoch>.jsonl
-    let transcript_path = crate::pty::runtime::transcript::agentcompany_logs_dir()
-      .and_then(|base| {
-        crate::pty::runtime::transcript::open_transcript(&base, agent_id, "manual").ok()
-      });
 
     sessions.insert(
       id.clone(),
@@ -626,7 +626,7 @@ pub fn transcript_append_session_buffer(
   execution_id: String,
   text: String,
 ) -> Result<(), String> {
-  let mut sessions = manager
+  let sessions = manager
     .sessions
     .lock()
     .map_err(|_| "pty sessions lock poisoned".to_string())?;

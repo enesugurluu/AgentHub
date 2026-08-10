@@ -193,9 +193,15 @@ pub fn start_output_pump(
       });
 
       // WP-10 tamamlanma algılaması: son TaskCompleted/Failed sinyalini oturuma yaz.
+      // `state` + guard aynı iç scope'ta tutulur (E0597 önlemi).
       if let Some(sig) = result.last_completion {
-        let state: State<PtyManager> = app.state();
-        if let Ok(mut sessions) = state.sessions.lock() {
+        {
+          let state: State<PtyManager> = app.state();
+          let lock_result = state.sessions.lock();
+          let mut sessions = match lock_result {
+            Ok(guard) => guard,
+            Err(_) => return,
+          };
           if let Some(session) = sessions.get_mut(&agent_id) {
             if session.execution_id == execution_id {
               *session.last_completion.lock().unwrap() = Some(sig);
@@ -211,28 +217,33 @@ pub fn start_output_pump(
     loop {
       thread::sleep(Duration::from_millis(250));
 
-      let state: State<PtyManager> = app.state();
-
       let mut remove = false;
       let mut exit_code: u32 = 0;
       let mut last_completion: Option<OutputSignal> = None;
 
-      if let Ok(mut sessions) = state.sessions.lock() {
-        if let Some(session) = sessions.get_mut(&agent_id) {
-          if session.execution_id != execution_id {
-            // Bu agent ID'sini farklı bir execution devralmış; monitor artık geçersiz.
-            break;
-          }
-          // Mutable erişimle child durumunu kontrol et.
-          if let Ok(Some(status)) = session.child.try_wait() {
-            exit_code = status.exit_code();
-            remove = true;
-            // Parser'ın son sinyali (WP-04) — removal öncesi yakala.
-            last_completion = session.last_completion.lock().unwrap().clone();
-          }
-        } else {
+      // `state` + guard aynı iç scope'ta tutulur (E0597 önlemi).
+      {
+        let state: State<PtyManager> = app.state();
+        let lock_result = state.sessions.lock();
+        let mut sessions = match lock_result {
+          Ok(guard) => guard,
+          Err(_) => break,
+        };
+
+        let Some(session) = sessions.get_mut(&agent_id) else {
           // Oturum zaten kaldırılmış (agent_stop tarafından).
           break;
+        };
+        if session.execution_id != execution_id {
+          // Bu agent ID'sini farklı bir execution devralmış; monitor artık geçersiz.
+          break;
+        }
+        // Mutable erişimle child durumunu kontrol et.
+        if let Ok(Some(status)) = session.child.try_wait() {
+          exit_code = status.exit_code();
+          remove = true;
+          // Parser'ın son sinyali (WP-04) — removal öncesi yakala.
+          last_completion = session.last_completion.lock().unwrap().clone();
         }
 
         if remove {

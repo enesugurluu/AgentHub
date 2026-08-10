@@ -537,7 +537,8 @@ impl AppDb {
                 spent_tokens_output = spent_tokens_output + ?5,
                 completed_at = COALESCE(completed_at, datetime('now'))
          WHERE id = ?1",
-        params![task_id, column, cost, tokens_in, tokens_out],
+        // rusqlite ToSql: u64 desteklenmez → i64'e cast (E0277).
+        params![task_id, column, cost, tokens_in as i64, tokens_out as i64],
       )
       .map_err(|e| e.to_string())?;
     if updated == 0 {
