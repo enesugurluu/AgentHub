@@ -89,7 +89,9 @@ fn resolve_agent_workdir(
   if let Err(e) = prepare_worktree_env(std::path::Path::new(&info.path), id) {
     tracing::warn!(agent_id, "worktree env hazırlanamadı: {e}");
   }
-  link_node_modules(std::path::Path::new(&info.path), std::path::Path::new(repo_path));
+  // `repo_path` Windows'tan gelen raw yol olabilir; link_node_modules'a sanitizan geç.
+  let sanitized_repo = crate::worktree::sanitize_repo_path(repo_path);
+  link_node_modules(std::path::Path::new(&info.path), &sanitized_repo);
 
   Ok(info.path)
 }
