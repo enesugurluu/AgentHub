@@ -26,7 +26,7 @@ Mevcut `EngineAdapter` yapısı, sadece bir komutu PTY'de çalıştırmaya yöne
 
 ### B. Terminal Yönetimi ve UI
 
-Mevcut durumda React içerisinde `PtyTerminal.tsx` bileşeni muhtemelen `xterm.js` ile basit bir entegrasyon içermektedir.
+Mevcut durumda React içerisinde `src/components/PtyTerminal.tsx` bileşeni `xterm` ve `xterm-addon-fit` ile terminal entegrasyonu içermektedir.
 
 *   **Aksiyon:** Terminal görünümü sağlamlaştırılmalı, React + xterm.js tam performanslı hale getirilmelidir.
 *   **Önerilen Repo (MUST):** `xtermjs/xterm.js` eklentilerinden WebGL renderer, fit addon ve search addon kullanılmalıdır.
