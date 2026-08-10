@@ -190,8 +190,11 @@ pub fn worktree_remove(worktree_path: String, force: Option<bool>) -> Result<(),
     // (though in a real scenario, this might mean the worktree is dirty,
     // so returning an error is correct. The metadata file might be gone, which is less ideal).
     if let Err(e) = result {
-        if !is_force && let Ok(json) = serde_json::to_string(&info) {
-            let _ = fs::write(&metadata_path, json);
+        // Not: let-chain `&& let` edition 2024 gerektirir (proje 2021'de) — iç içe if kalır.
+        if !is_force {
+            if let Ok(json) = serde_json::to_string(&info) {
+                let _ = fs::write(&metadata_path, json);
+            }
         }
         return Err(format!("Failed to remove worktree: {e}"));
     }
