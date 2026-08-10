@@ -9,6 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::db::{AgentRecord, TaskRecord};
+use crate::pty::runtime::parser::OutputSignal;
 
 /// Görev dosyası adları (docs 13.2).
 pub const TASK_COMPLETE_FILE: &str = "TASK_COMPLETE.md";
@@ -66,7 +67,7 @@ pub fn write_agent_task(
 /// 5. exit kodu 0 → `review`, ≠ 0 → `failed`
 pub fn decide_completion(
   worktree: Option<&Path>,
-  last_completion: Option<&crate::pty::runtime::parser::OutputSignal>,
+  last_completion: Option<&OutputSignal>,
   exit_code: u32,
 ) -> (String, String) {
   // (1) dosya sinyali — dosyalar parser'dan daha kesindir.

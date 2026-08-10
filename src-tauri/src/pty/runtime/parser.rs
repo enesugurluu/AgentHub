@@ -373,9 +373,21 @@ mod tests {
   #[test]
   fn select_parser_mapping() {
     // claude+print → stream-json; claude interaktif → regex; opencode → jsonl; diğer → regex.
-    assert!(select_parser("claude", true).is::<ClaudeStreamJsonParser>());
-    assert!(select_parser("claude", false).is::<RegexProgressParser>());
-    assert!(select_parser("opencode", false).is::<OpencodeJsonlParser>());
-    assert!(select_parser("codex", true).is::<RegexProgressParser>());
+    // (dyn trait üzerinde `is::<T>()` yok → type_name ile tür kontrolü)
+    assert!(
+      std::any::type_name_of_val(&*select_parser("claude", true))
+        .contains("ClaudeStreamJsonParser")
+    );
+    assert!(
+      std::any::type_name_of_val(&*select_parser("claude", false))
+        .contains("RegexProgressParser")
+    );
+    assert!(
+      std::any::type_name_of_val(&*select_parser("opencode", false))
+        .contains("OpencodeJsonlParser")
+    );
+    assert!(
+      std::any::type_name_of_val(&*select_parser("codex", true)).contains("RegexProgressParser")
+    );
   }
 }

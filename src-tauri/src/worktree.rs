@@ -261,7 +261,8 @@ pub fn ensure_agent_worktree(
         return Ok(info);
     }
 
-    let suffix = &Uuid::new_v4().to_string()[..8];
+    let uuid = Uuid::new_v4().to_string();
+    let suffix = &uuid[..8];
     let strategy = BranchStrategy::NewBranchFrom {
         base_branch: base_branch.to_string(),
         name: format!("agent/{}-{}", sanitize_agent_name(agent_name), suffix),

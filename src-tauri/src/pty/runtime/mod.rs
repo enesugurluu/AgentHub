@@ -268,6 +268,7 @@ pub fn start_output_pump(
         let event = PtyEvent {
           agent_id: agent_id.clone(),
           execution_id: execution_id.clone(),
+          task_id,
           kind: PtyEventKind::Exit { code: exit_code },
         };
         let _ = channel.send(event);
@@ -334,11 +335,10 @@ mod tests {
 
   #[test]
   fn pump_loop_forwards_output_and_progress() {
+    let chunk2: &[u8] =
+      b"{\"type\":\"system\",\"subtype\":\"usage\",\"usage\":{\"input_tokens\":3},\"cost_usd\":0.01}\n";
     let reader = Box::new(FakeReader {
-      chunks: vec![
-        b"selam\n".to_vec(),
-        b"{\"type\":\"system\",\"subtype\":\"usage\",\"usage\":{\"input_tokens\":3},\"cost_usd\":0.01}\n".to_vec(),
-      ],
+      chunks: vec![b"selam\n".to_vec(), chunk2.to_vec()],
     });
     let mut events: Vec<PtyEvent> = Vec::new();
     let result = pump_loop(
@@ -346,10 +346,11 @@ mod tests {
       Box::<ClaudeStreamJsonParser>::default(),
       "1",
       "exec-1",
+      None,
       |e| events.push(e),
     );
 
-    assert_eq!(result.output_bytes, 6 + 90); // iki chunk
+    assert_eq!(result.output_bytes, (b"selam\n".len() + chunk2.len()) as u64);
     assert!(result.last_completion.is_none());
     // output + progress sinyali
     assert!(events
@@ -374,6 +375,7 @@ mod tests {
       Box::<ClaudeStreamJsonParser>::default(),
       "2",
       "exec-2",
+      None,
       |e| last = Some(e),
     );
     assert!(result.last_completion.is_some());
@@ -386,11 +388,18 @@ mod tests {
       chunks: vec![b"[1/3] calisiyor\n".to_vec()],
     });
     let mut signals = Vec::new();
-    let _ = pump_loop(reader, Box::<RegexProgressParser>::default(), "3", "exec-3", |e| {
-      if let PtyEventKind::Signal { signal } = e.kind {
-        signals.push(signal);
-      }
-    });
+    let _ = pump_loop(
+      reader,
+      Box::<RegexProgressParser>::default(),
+      "3",
+      "exec-3",
+      None,
+      |e| {
+        if let PtyEventKind::Signal { signal } = e.kind {
+          signals.push(signal);
+        }
+      },
+    );
     assert!(signals
       .iter()
       .any(|s| matches!(s, OutputSignal::Progress { turn: 1, .. })));
