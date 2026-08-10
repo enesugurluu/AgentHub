@@ -4,8 +4,8 @@
   "version": "0.0.0",
   "identifier": "com.agenthub.app",
   "build": {
-    "beforeDevCommand": "npm exec --yes pnpm@9 -- dev",
-    "beforeBuildCommand": "npm exec --yes pnpm@9 -- build",
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../dist"
   },
@@ -20,9 +20,7 @@
       }
     ],
     "security": {
-      "capabilities": [
-        "main-capability"
-      ]
+      "capabilities": ["main-capability"]
     }
   }
 }

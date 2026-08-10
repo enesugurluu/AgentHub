@@ -3,6 +3,7 @@ use std::{
   sync::{Arc, RwLock},
 };
 
+use crate::agents::ClaudeAdapter;
 use crate::pty::adapters::{EngineAdapter, PortablePtyAdapter};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +35,8 @@ impl EngineAdapterRegistry {
     let registry = Self::new();
     // Built-in adapters are registered eagerly so the app has at least one adapter.
     let _ = registry.register(Arc::new(PortablePtyAdapter));
+    // CLI ajan adaptörü (Claude Code) — kurulu değilse detect() false döner.
+    let _ = registry.register(Arc::new(ClaudeAdapter));
     registry
   }
 
@@ -385,6 +388,7 @@ mod tests {
     let reg = EngineAdapterRegistry::with_builtins();
     let ids = reg.list_ids().unwrap();
     assert!(ids.contains(&"portable-pty-native".to_string()));
+    assert!(ids.contains(&"claude-code".to_string()));
   }
 
   #[test]

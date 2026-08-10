@@ -1,77 +1,76 @@
-# React + TypeScript + Vite
+# AgentHub
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+AjanOfis (AjanŞirket) vizyonunun Tauri 2 masaüstü uygulaması — çoklu AI CLI ajanını
+(Claude Code, ileride Codex/Gemini/OpenCode...) izole git worktree'lerinde yöneten
+bir "ajan şirketi" yönetim paneli.
 
-Currently, two official plugins are available:
+> **Durum: FAZ0** — iskelet + PTY motoru + Claude Code adaptörü + SQLite + terminal UI.
+> Detaylı plan ve mevcut durum analizi: [`FAZ0-DURUM-ANALIZI-VE-UYGULAMA-PLANI.md`](./FAZ0-DURUM-ANALIZI-VE-UYGULAMA-PLANI.md)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Teknoloji Yığını
 
-## React Compiler
+| Katman | Teknoloji |
+|:---|:---|
+| Desktop | Tauri 2 (Rust) |
+| Frontend | React 19 + TypeScript + Vite 8, Tailwind CSS 4 + shadcn/ui, Zustand |
+| Terminal | xterm.js 5 + WebGL renderer (+ fit, search, web-links, serialize) |
+| PTY | `portable-pty` (ConPTY / POSIX) + Windows Job Objects izolasyonu |
+| Veri | SQLite (`rusqlite`, bundled, WAL) — `agents`, `tasks`, `events`, `settings` |
+| Lint/Format | Biome (+ husky pre-commit) |
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
+## Gereksinimler
 
-Note: This will impact Vite dev & build performances.
+- **Node.js 22+** ve **pnpm 9** (`npm i -g pnpm@9` veya corepack)
+- **Rust stable** (rustup) — Linux'ta ayrıca `libwebkit2gtk-4.1-dev`, `libgtk-3-dev` vb. (Tauri ön koşulları)
+- **Claude Code CLI** (Claude ajanı için): `curl -fsSL https://claude.ai/install.sh | bash` → `claude doctor` ile doğrula
 
-## Expanding the ESLint configuration
+## Kurulum ve Çalıştırma
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+pnpm install
+pnpm tauri:dev        # masaüstü uygulaması (Tauri + Vite)
+# veya sadece frontend önizlemesi:
+pnpm dev              # http://localhost:5173 (tarayıcıda local-echo modu)
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Komutlar
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+| Komut | Açıklama |
+|:---|:---|
+| `pnpm dev` | Vite dev server |
+| `pnpm tauri:dev` | Tauri + Vite |
+| `pnpm build` | tsc + vite production build |
+| `pnpm check` / `pnpm lint` | Biome (fix / salt) |
+| `pnpm typecheck` | tsc -b |
+| `cd src-tauri && cargo test` | Rust unit testleri |
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Mimari (özet)
 
 ```
+src-tauri/            Rust backend
+├── src/
+│   ├── lib.rs        Tauri builder, DB setup, komut kaydı
+│   ├── main.rs       giriş noktası
+│   ├── db.rs         SQLite (WAL) — agents/tasks/events/settings
+│   ├── agents/       CLI ajan adaptörleri (claude.rs ilk dalga)
+│   ├── pty/          adaptör trait + registry, PTY runtime (Channel), worktree
+│   └── worktree.rs   git worktree yöneticisi (güvenli path)
+src/                  React frontend
+├── components/       TopBar, OfficeFloor, AgentSidebar, Inspector, TerminalTabs, ui/
+├── store/            Zustand (agents, terminal, settings)
+└── lib/              ipc.ts (Tauri invoke köprüsü), utils
+```
+
+PTY çıktısı, per-session `Channel<PtyEvent>` ile ham bayt olarak akar
+(`kind.type = "output" | "exit"`); ajanlar `.git/agenthub-worktrees` altındaki
+izole worktree'lerde çalışır.
+
+## Yol Haritası
+
+- ✅ **FAZ0** — iskelet, PTY + adaptör registry, worktree, Claude adaptörü, SQLite, terminal UI
+- ⏳ **Faz 2 (M1)** — Codex/Gemini/OpenCode adaptörleri, işe alım sihirbazı, ofis katı SVG, çoklu oturum
+- ⏳ **Faz 3 (M2)** — Kanban, CEO orkestrasyonu, onay akışı + policy engine, maliyet takibi
+- ⏳ **Faz 4 (M3)** — Bilgi grafı (SQLite + FTS5 + sqlite-vec), Sigma.js, yerel embedding
+- ⏳ **Faz 5 (M4)** — MCP Hub (`rmcp`), toplantı odası, paketleme + auto-updater
+
+Detay: [`AGENTHUB-YOL-HARITASI-RAPORU.md`](./AGENTHUB-YOL-HARITASI-RAPORU.md) ve `Docs/`

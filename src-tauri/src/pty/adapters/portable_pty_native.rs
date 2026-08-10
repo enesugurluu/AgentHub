@@ -1,7 +1,9 @@
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::time::Duration;
 
-use super::{DetectResult, EngineAdapter, EngineMetadata, HealthReport, SpawnedPty};
+use super::{
+  spawn_pty_isolated, DetectResult, EngineAdapter, EngineMetadata, HealthReport, SpawnedPty,
+};
 
 /// Built-in adapter backed by the `portable-pty` crate's native PTY implementation.
 #[derive(Debug, Default, Clone, Copy)]
@@ -59,92 +61,7 @@ impl EngineAdapter for PortablePtyAdapter {
   }
 
   fn spawn(&self, cmd: CommandBuilder, cols: u16, rows: u16) -> Result<SpawnedPty, String> {
-    let pty_system = native_pty_system();
-    let pair = pty_system
-      .openpty(PtySize {
-        rows,
-        cols,
-        pixel_width: 0,
-        pixel_height: 0,
-      })
-      .map_err(|e| e.to_string())?;
-
-    let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
-
-    #[cfg(target_os = "windows")]
-    {
-      use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
-      use windows_sys::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, SetInformationJobObject,
-        JobObjectExtendedLimitInformation, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-      };
-      use windows_sys::Win32::System::Threading::{
-        OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
-      };
-      use std::mem;
-
-      let mut final_job_handle: Option<isize> = None;
-
-      if let Some(pid) = child.process_id() {
-        unsafe {
-          let job: HANDLE = CreateJobObjectW(std::ptr::null(), std::ptr::null());
-          if job != 0 {
-            let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = mem::zeroed();
-            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-
-            let res = SetInformationJobObject(
-              job,
-              JobObjectExtendedLimitInformation,
-              &info as *const _ as *const std::ffi::c_void,
-              mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-            );
-
-            if res != 0 {
-              let proc_handle = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid);
-              if proc_handle != 0 {
-                let assign_res = AssignProcessToJobObject(job, proc_handle);
-                CloseHandle(proc_handle);
-                if assign_res == 0 {
-                  // Failed to assign. Kill the process immediately and return error.
-                  let _ = child.kill();
-                  let _ = child.wait();
-                  CloseHandle(job);
-                  return Err("Failed to assign process to Job Object".to_string());
-                }
-
-                final_job_handle = Some(job as isize);
-              } else {
-                 let _ = child.kill();
-                 let _ = child.wait();
-                 CloseHandle(job);
-                 return Err("Failed to open process for job assignment".to_string());
-              }
-            } else {
-                 let _ = child.kill();
-                 let _ = child.wait();
-                 CloseHandle(job);
-                 return Err("Failed to set job object information".to_string());
-            }
-          } else {
-             let _ = child.kill();
-             let _ = child.wait();
-             return Err("Failed to create job object".to_string());
-          }
-        }
-      }
-    }
-
-    let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
-    let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
-
-    Ok(SpawnedPty {
-      reader,
-      writer,
-      child,
-      #[cfg(target_os = "windows")]
-      job_handle: final_job_handle,
-    })
+    spawn_pty_isolated(cmd, cols, rows)
   }
 
   fn stop(&self, child: &mut (dyn portable_pty::Child + Send + Sync)) -> Result<(), String> {

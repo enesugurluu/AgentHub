@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm check*)",
+      "Bash(pnpm lint*)",
+      "Bash(pnpm typecheck*)",
+      "Bash(pnpm build*)",
+      "Bash(cargo test*)",
+      "Bash(cargo clippy*)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Read(*)"
+    ],
+    "deny": [
+      "Bash(*DROP*)",
+      "Bash(*TRUNCATE*)",
+      "Bash(*rm -rf*)",
+      "Bash(*git push --force*)",
+      "Bash(*sudo*)",
+      "Bash(*chmod 777*)",
+      "Write(.env*)",
+      "Write(CLAUDE.local.md)"
+    ],
+    "ask": [
+      "Bash(pnpm install*)",
+      "Bash(pnpm add*)",
+      "Bash(pnpm remove*)",
+      "Bash(cargo add*)",
+      "Bash(git commit*)",
+      "Bash(git push*)"
+    ]
+  }
+}

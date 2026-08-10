@@ -1,0 +1,11 @@
+#!/bin/sh
+# Biome: staged dosyaları kontrol et.
+# Husky `sh -e` ile çalıştırır; biome'un exit code'unu manuel yönetiriz.
+set +e
+output=$(pnpm exec biome check --staged 2>&1)
+status=$?
+if [ $status -ne 0 ] && ! echo "$output" | grep -q "No files were processed"; then
+  echo "$output"
+  exit 1
+fi
+exit 0
