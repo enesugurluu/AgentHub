@@ -19,7 +19,7 @@ pub enum EngineAdapterQuery {
 ///
 /// - "Typed": values are `Arc<dyn EngineAdapter>` rather than loosely typed maps.
 /// - "Dynamic registration": adapters can be registered/unregistered at runtime.
-/// - "Queries": supports filtering by detected/healthy.
+/// - "Queries": supports filtering by detected/healthy, and querying metadata.
 #[derive(Default)]
 pub struct EngineAdapterRegistry {
   adapters: RwLock<HashMap<String, Arc<dyn EngineAdapter>>>,
@@ -33,12 +33,21 @@ impl EngineAdapterRegistry {
   pub fn with_builtins() -> Self {
     let registry = Self::new();
     // Built-in adapters are registered eagerly so the app has at least one adapter.
-    let _ = registry.register(Arc::new(PortablePtyAdapter::default()));
+    let _ = registry.register(Arc::new(PortablePtyAdapter));
     registry
   }
 
   pub fn register(&self, adapter: Arc<dyn EngineAdapter>) -> Result<(), String> {
-    let id = adapter.id().to_string();
+    let id = adapter.id().trim().to_string();
+    if id.is_empty() {
+      return Err("engine adapter id cannot be empty".to_string());
+    }
+
+    let meta = adapter.metadata();
+    if meta.engine_type.trim().is_empty() {
+      return Err("engine adapter must have a non-empty engine_type in metadata".to_string());
+    }
+
     let mut adapters = self
       .adapters
       .write()
@@ -65,6 +74,55 @@ impl EngineAdapterRegistry {
       .read()
       .map_err(|_| "engine adapter registry lock poisoned".to_string())?;
     Ok(adapters.get(id).cloned())
+  }
+
+  pub fn find_by_engine_type(&self, engine_type: &str) -> Result<Vec<Arc<dyn EngineAdapter>>, String> {
+    let adapters = self
+      .adapters
+      .read()
+      .map_err(|_| "engine adapter registry lock poisoned".to_string())?;
+
+    let mut matches = Vec::new();
+    for adapter in adapters.values() {
+      if adapter.metadata().engine_type == engine_type {
+        matches.push(adapter.clone());
+      }
+    }
+    Ok(matches)
+  }
+
+  pub fn find_by_version(&self, engine_type: &str, version: &str) -> Result<Vec<Arc<dyn EngineAdapter>>, String> {
+    let adapters = self
+      .adapters
+      .read()
+      .map_err(|_| "engine adapter registry lock poisoned".to_string())?;
+
+    let mut matches = Vec::new();
+    for adapter in adapters.values() {
+      let meta = adapter.metadata();
+      if meta.engine_type == engine_type && meta.version.as_deref() == Some(version) {
+        matches.push(adapter.clone());
+      }
+    }
+    Ok(matches)
+  }
+
+  pub fn query_metadata<F>(&self, filter: F) -> Result<Vec<Arc<dyn EngineAdapter>>, String>
+  where
+    F: Fn(&crate::pty::adapters::EngineMetadata) -> bool,
+  {
+    let adapters = self
+      .adapters
+      .read()
+      .map_err(|_| "engine adapter registry lock poisoned".to_string())?;
+
+    let mut matches = Vec::new();
+    for adapter in adapters.values() {
+      if filter(&adapter.metadata()) {
+        matches.push(adapter.clone());
+      }
+    }
+    Ok(matches)
   }
 
   pub fn list_ids(&self) -> Result<Vec<String>, String> {
@@ -129,19 +187,29 @@ impl EngineAdapterRegistry {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::pty::adapters::SpawnedPty;
+  use crate::pty::adapters::{EngineMetadata, SpawnedPty};
   use portable_pty::CommandBuilder;
 
   #[derive(Clone)]
   struct MockAdapter {
-    id: &'static str,
+    id: String,
     detected: bool,
     healthy: bool,
+    engine_type: String,
+    version: Option<String>,
   }
 
   impl EngineAdapter for MockAdapter {
     fn id(&self) -> &str {
-      self.id
+      &self.id
+    }
+
+    fn metadata(&self) -> EngineMetadata {
+      EngineMetadata {
+        engine_type: self.engine_type.clone(),
+        version: self.version.clone(),
+        capabilities: vec![],
+      }
     }
 
     fn detect(&self) -> bool {
@@ -166,13 +234,40 @@ mod tests {
   }
 
   #[test]
+  fn register_validation() {
+    let reg = EngineAdapterRegistry::new();
+
+    // Empty ID
+    let err = reg.register(Arc::new(MockAdapter {
+      id: "".to_string(),
+      detected: true,
+      healthy: true,
+      engine_type: "test".to_string(),
+      version: None,
+    })).unwrap_err();
+    assert_eq!(err, "engine adapter id cannot be empty");
+
+    // Empty engine_type
+    let err = reg.register(Arc::new(MockAdapter {
+      id: "valid".to_string(),
+      detected: true,
+      healthy: true,
+      engine_type: "   ".to_string(),
+      version: None,
+    })).unwrap_err();
+    assert_eq!(err, "engine adapter must have a non-empty engine_type in metadata");
+  }
+
+  #[test]
   fn register_and_get_roundtrip() {
     let reg = EngineAdapterRegistry::new();
     reg
       .register(Arc::new(MockAdapter {
-        id: "mock-a",
+        id: "mock-a".to_string(),
         detected: true,
         healthy: true,
+        engine_type: "test".to_string(),
+        version: None,
       }))
       .unwrap();
 
@@ -185,23 +280,29 @@ mod tests {
     let reg = EngineAdapterRegistry::new();
     reg
       .register(Arc::new(MockAdapter {
-        id: "b",
+        id: "b".to_string(),
         detected: true,
         healthy: true,
+        engine_type: "test".to_string(),
+        version: None,
       }))
       .unwrap();
     reg
       .register(Arc::new(MockAdapter {
-        id: "a",
+        id: "a".to_string(),
         detected: false,
         healthy: true,
+        engine_type: "test".to_string(),
+        version: None,
       }))
       .unwrap();
     reg
       .register(Arc::new(MockAdapter {
-        id: "c",
+        id: "c".to_string(),
         detected: true,
         healthy: false,
+        engine_type: "test".to_string(),
+        version: None,
       }))
       .unwrap();
 
@@ -211,20 +312,67 @@ mod tests {
   }
 
   #[test]
-  fn select_default_prefers_healthy_then_detected() {
+  fn query_metadata() {
     let reg = EngineAdapterRegistry::new();
     reg
       .register(Arc::new(MockAdapter {
-        id: "a",
+        id: "a".to_string(),
         detected: true,
-        healthy: false,
+        healthy: true,
+        engine_type: "docker".to_string(),
+        version: Some("20.10".to_string()),
       }))
       .unwrap();
     reg
       .register(Arc::new(MockAdapter {
-        id: "b",
+        id: "b".to_string(),
         detected: true,
         healthy: true,
+        engine_type: "pty".to_string(),
+        version: Some("1.0".to_string()),
+      }))
+      .unwrap();
+    reg
+      .register(Arc::new(MockAdapter {
+        id: "c".to_string(),
+        detected: true,
+        healthy: true,
+        engine_type: "docker".to_string(),
+        version: Some("24.0".to_string()),
+      }))
+      .unwrap();
+
+    let docker_adapters = reg.find_by_engine_type("docker").unwrap();
+    assert_eq!(docker_adapters.len(), 2);
+
+    let docker_v24 = reg.find_by_version("docker", "24.0").unwrap();
+    assert_eq!(docker_v24.len(), 1);
+    assert_eq!(docker_v24[0].id(), "c");
+
+    let custom_query = reg.query_metadata(|meta| meta.engine_type == "pty").unwrap();
+    assert_eq!(custom_query.len(), 1);
+    assert_eq!(custom_query[0].id(), "b");
+  }
+
+  #[test]
+  fn select_default_prefers_healthy_then_detected() {
+    let reg = EngineAdapterRegistry::new();
+    reg
+      .register(Arc::new(MockAdapter {
+        id: "a".to_string(),
+        detected: true,
+        healthy: false,
+        engine_type: "test".to_string(),
+        version: None,
+      }))
+      .unwrap();
+    reg
+      .register(Arc::new(MockAdapter {
+        id: "b".to_string(),
+        detected: true,
+        healthy: true,
+        engine_type: "test".to_string(),
+        version: None,
       }))
       .unwrap();
 
@@ -244,9 +392,11 @@ mod tests {
     let reg = EngineAdapterRegistry::new();
     reg
       .register(Arc::new(MockAdapter {
-        id: "mock-a",
+        id: "mock-a".to_string(),
         detected: true,
         healthy: true,
+        engine_type: "test".to_string(),
+        version: None,
       }))
       .unwrap();
 

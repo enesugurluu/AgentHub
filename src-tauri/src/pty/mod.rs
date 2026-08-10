@@ -6,6 +6,7 @@ use self::{
   runtime::start_output_pump,
   worktree::build_command,
 };
+use crate::pty::adapters::EngineMetadata;
 
 pub mod adapters;
 pub mod registry;
@@ -29,6 +30,41 @@ pub fn pty_list_engine_adapters(
   };
 
   adapters.query_ids(query)
+}
+
+#[tauri::command]
+pub fn pty_list_all_ids(
+  adapters: State<EngineAdapterRegistry>,
+) -> Result<Vec<String>, String> {
+  adapters.list_ids()
+}
+
+#[tauri::command]
+pub fn pty_unregister_engine_adapter(
+  adapters: State<EngineAdapterRegistry>,
+  id: String,
+) -> Result<bool, String> {
+  let removed = adapters.unregister(&id)?;
+  Ok(removed.is_some())
+}
+
+#[tauri::command]
+pub fn pty_find_by_engine_type(
+  adapters: State<EngineAdapterRegistry>,
+  engine_type: String,
+) -> Result<Vec<EngineMetadata>, String> {
+  let matches = adapters.find_by_engine_type(&engine_type)?;
+  Ok(matches.into_iter().map(|a| a.metadata()).collect())
+}
+
+#[tauri::command]
+pub fn pty_find_by_version(
+  adapters: State<EngineAdapterRegistry>,
+  engine_type: String,
+  version: String,
+) -> Result<Vec<EngineMetadata>, String> {
+  let matches = adapters.find_by_version(&engine_type, &version)?;
+  Ok(matches.into_iter().map(|a| a.metadata()).collect())
 }
 
 #[tauri::command]

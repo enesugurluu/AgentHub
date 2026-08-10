@@ -2,7 +2,10 @@
 
 mod pty;
 
-use pty::{pty_list_engine_adapters, pty_spawn, pty_stop, pty_write};
+use pty::{
+  pty_find_by_engine_type, pty_find_by_version, pty_list_all_ids,
+  pty_list_engine_adapters, pty_spawn, pty_stop, pty_unregister_engine_adapter, pty_write,
+};
 use pty::registry::{EngineAdapterRegistry, PtyManager};
 
 fn main() {
@@ -13,7 +16,11 @@ fn main() {
       pty_spawn,
       pty_write,
       pty_stop,
-      pty_list_engine_adapters
+      pty_list_engine_adapters,
+      pty_list_all_ids,
+      pty_unregister_engine_adapter,
+      pty_find_by_engine_type,
+      pty_find_by_version
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
