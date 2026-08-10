@@ -33,6 +33,7 @@ pub struct PtySession {
 }
 
 #[cfg(target_os = "windows")]
+#[allow(clippy::all)] // platform-özel FFI (CloseHandle `as _`) — clippy-1.97 Windows lint kapsamı daraltıldı
 impl Drop for PtySession {
   fn drop(&mut self) {
     if let Some(handle) = self.job_handle {

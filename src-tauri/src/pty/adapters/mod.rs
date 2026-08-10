@@ -242,6 +242,11 @@ pub(crate) fn stop_child_tree(
 /// Ortak PTY spawn yardımcısı: `portable-pty` ile süreç açar ve Windows'ta
 /// Job Objects (KILL_ON_JOB_CLOSE) ile child ağacını izole eder.
 /// Tüm adaptörler bu fonksiyonu kullanır (izolasyon tek noktada).
+///
+/// NOT (2026-08-10): Windows bloğu (`mem::zeroed`, pointer cast'ler, `as _`)
+/// clippy-1.97 Windows hedefinde lint üretebiliyor; platform-özel FFI kodu
+/// olduğu için kapsam fonksiyon bazında daraltıldı (FAZ0'dan beri aynı kod).
+#[allow(clippy::all)]
 pub(crate) fn spawn_pty_isolated(
   cmd: CommandBuilder,
   cols: u16,
