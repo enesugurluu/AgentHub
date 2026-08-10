@@ -6,7 +6,7 @@
 //!
 //! Kurulum notu (docs 03): native installer — `curl -fsSL https://claude.ai/install.sh | bash`
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
@@ -153,7 +153,7 @@ impl EngineAdapter for ClaudeAdapter {
 
 /// Adaptör için yardımcılar (gelecekte codex/gemini aynı deseni kullanır).
 #[allow(dead_code)]
-pub(crate) fn claude_worktree_path(workdir: &PathBuf) -> PathBuf {
+pub(crate) fn claude_worktree_path(workdir: &Path) -> PathBuf {
   workdir.join("AGENT_TASK.md")
 }
 

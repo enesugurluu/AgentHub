@@ -48,7 +48,7 @@ fn ensure_not_running(manager: &State<PtyManager>, agent_id: &str) -> Result<(),
     .lock()
     .map_err(|_| "pty sessions lock poisoned".to_string())?;
   if sessions.contains_key(agent_id) {
-    return Err(format!("agent {} is already running", agent_id));
+    return Err(format!("agent {agent_id} is already running"));
   }
   Ok(())
 }
@@ -266,7 +266,7 @@ fn register_session(
       let mut child = spawned.child;
       let _ = child.kill();
       let _ = child.wait();
-      return Err(format!("agent {} is already running", id));
+      return Err(format!("agent {id} is already running"));
     }
 
     sessions.insert(

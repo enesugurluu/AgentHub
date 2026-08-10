@@ -121,9 +121,9 @@ mod tests {
     let adapter = PortablePtyAdapter;
     // On Windows we would use "cmd", on Unix "sh"
     #[cfg(windows)]
-    let mut cmd = CommandBuilder::new("cmd");
+    let cmd = CommandBuilder::new("cmd");
     #[cfg(not(windows))]
-    let mut cmd = CommandBuilder::new("sh");
+    let cmd = CommandBuilder::new("sh");
 
     // Test spawning
     let mut spawned = adapter.spawn(cmd, 80, 24).expect("should spawn process");
