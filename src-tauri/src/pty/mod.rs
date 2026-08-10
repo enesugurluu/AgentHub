@@ -90,16 +90,14 @@ pub fn agent_spawn(
   // In a real scenario, this would be resolved from the backend agent registry.
   // We resolve the worktree securely without trusting the frontend.
   let repo_path = std::env::current_dir().unwrap_or_default().to_string_lossy().to_string();
-  let worktree_path = resolve_worktree_path_for_agent(&repo_path, &agent_id).ok();
+  let worktree_path = resolve_worktree_path_for_agent(&repo_path, &agent_id)?;
 
-  let mut envs = vec![
-    ("AGENTHUB_AGENT_ID".to_string(), agent_id.clone())
+  let envs = vec![
+    ("AGENTHUB_AGENT_ID".to_string(), agent_id.clone()),
+    ("AGENTHUB_WORKTREE".to_string(), worktree_path.clone()),
   ];
-  if let Some(ref wt) = worktree_path {
-    envs.push(("AGENTHUB_WORKTREE".to_string(), wt.clone()));
-  }
 
-  let cmd = build_command(program, args, worktree_path, envs);
+  let cmd = build_command(program, args, Some(worktree_path), envs);
   let adapter = adapters
     .select_default()?
     .ok_or_else(|| "no PTY engine adapter available".to_string())?;
