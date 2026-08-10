@@ -13,6 +13,8 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     host: host || false,
+    // Sanbox önizleme host'ları (örn. 5173-<sandbox>.e2b.app)
+    allowedHosts: ['.e2b.app'],
     hmr: host
       ? {
           protocol: 'ws',
