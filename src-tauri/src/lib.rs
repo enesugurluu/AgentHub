@@ -61,7 +61,8 @@ pub fn run() {
       db::repo_select,
       worktree::worktree_create,
       worktree::worktree_remove,
-      worktree::worktree_list
+      worktree::worktree_list,
+      worktree::worktree_for_agent
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

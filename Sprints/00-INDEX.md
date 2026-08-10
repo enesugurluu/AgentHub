@@ -21,7 +21,7 @@ talimatlar, test planı, doğrulama komutları, riskler ve devir notlarını ta�
 | [FAZ1-WP02](./FAZ1-WP02-SPAWNOPTIONS-VE-ENGINE-SPAWN.md) | 2 | `SpawnOptions` tam hali + `agent_spawn_engine` | 4 sa | P0 | WP-01 (agent_get) | ✅ Kod + golden argv testleri (cargo doğrulaması CI'da) |
 | [FAZ1-WP03](./FAZ1-WP03-COKLU-MOTOR-ADAPTORLERI.md) | 3 | codex/gemini/opencode/aider adaptörleri + kurulum | 12–16 sa | P0 | WP-02 | ✅ 6 adaptör registry'de; mock-CLI + golden argv testleri |
 | [FAZ1-WP04](./FAZ1-WP04-OUTPUT-PARSER-VE-PROGRESS-EVENT.md) | 4 | OutputParser iskeleti + Progress event | 8 sa | P1 | WP-03 | Fixture parser testleri; Progress akıyor |
-| [FAZ1-WP05](./FAZ1-WP05-WORKTREE-OTOMASYONU.md) | 5 | Worktree otomasyonu + `.env.local` + silme seçenekleri | 8 sa | P0 | WP-01, WP-06 | Repo köküne düşme yok; port offset |
+| [FAZ1-WP05](./FAZ1-WP05-WORKTREE-OTOMASYONU.md) | 5 | Worktree otomasyonu + `.env.local` + silme seçenekleri | 8 sa | P0 | WP-01, WP-06 | ✅ Repo köküne düşme yok; ensure + port offset + 3 silme aksiyonu |
 | [FAZ1-WP06](./FAZ1-WP06-REPO-SECICI-VE-SETTINGS.md) | 6 | Repo seçici + settings kalıcılığı | 4 sa | P0 | WP-01 | ✅ Dialog seçimi kalıcı; TopBar çipi + onboarding |
 | [FAZ1-WP07](./FAZ1-WP07-HIRE-WIZARD.md) | 7 | Hire Wizard (3 adım) + preset roller | 10–12 sa | P0 | WP-01, WP-03, WP-06 | "İşe Al" → DB + ofiste masa |
 | [FAZ1-WP08](./FAZ1-WP08-FIRE-AKISI.md) | 8 | Fire onay akışı + Inspector butonu | 4 sa | P0 | WP-07 | Onay diyaloğu; worktree seçenekleri |

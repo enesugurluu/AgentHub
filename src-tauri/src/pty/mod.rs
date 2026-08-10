@@ -10,7 +10,7 @@ use self::{
 };
 use crate::db::AppDb;
 use crate::pty::adapters::{EngineMetadata, SpawnOptions};
-use crate::worktree::resolve_worktree_path_for_agent;
+use crate::worktree::{ensure_agent_worktree, link_node_modules, prepare_worktree_env};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -65,16 +65,33 @@ fn ensure_not_running(manager: &State<PtyManager>, agent_id: &str) -> Result<(),
   Ok(())
 }
 
-/// Ajanın çalışacağı dizini çözer: önce ajanın yönetilen worktree'si,
-/// yoksa repo köküne geri düşer (FAZ0 davranışı).
-fn resolve_agent_workdir(repo_path: &str, agent_id: &str) -> String {
-  match resolve_worktree_path_for_agent(repo_path, agent_id) {
-    Ok(path) => path,
-    Err(e) => {
-      tracing::warn!(agent_id, "worktree bulunamadı, repo köküne düşülüyor: {e}");
-      repo_path.to_string()
-    }
+/// Ajanın çalışacağı dizini çözer (ADR-5/WP-05): DB'den ajanı okur, worktree'sini
+/// **garanti eder** (yoksa `agent/<slug>` branch'iyle oluşturur), `.env.local` +
+/// node_modules paylaşımını hazırlar. Repo köküne **DÜŞMEZ** — ajan DB'de yoksa
+/// açıklayıcı hata döner ("önce işe al").
+fn resolve_agent_workdir(
+  db: Option<&AppDb>,
+  repo_path: &str,
+  agent_id: &str,
+) -> Result<String, String> {
+  let db = db.ok_or_else(|| "veritabanı hazır değil — ajan doğrulanamadı".to_string())?;
+  let id: i64 = agent_id
+    .parse()
+    .map_err(|_| format!("geçersiz ajan kimliği '{agent_id}' — önce ajanı işe alın"))?;
+  let agent = db.get_agent(id)?;
+  let base_branch = db
+    .setting_get("main_branch")?
+    .unwrap_or_else(|| "main".to_string());
+
+  let info = ensure_agent_worktree(repo_path, agent_id, &agent.name, &base_branch)?;
+
+  // İzolasyon güçlendirmeleri: hata spawn'ı engellemez (warn + devam).
+  if let Err(e) = prepare_worktree_env(std::path::Path::new(&info.path), id) {
+    tracing::warn!(agent_id, "worktree env hazırlanamadı: {e}");
   }
+  link_node_modules(std::path::Path::new(&info.path), std::path::Path::new(repo_path));
+
+  Ok(info.path)
 }
 
 /// Ajan için ortam değişkenleri (execution izolasyonu).
@@ -167,9 +184,10 @@ pub fn agent_spawn(
   // Oturum çakışmasını spawn'dan önce yakala (yetim süreç önlemi).
   ensure_not_running(&manager, &agent_id)?;
 
-  // Worktree güvenli şekilde backend'de çözülür; frontend'e güvenilmez.
+  // Worktree güvenli şekilde backend'de çözülür (garanti edilir — ADR-5); frontend'e güvenilmez.
+  let db = app.try_state::<AppDb>().map(|s| s.inner());
   let repo_path = resolve_repo_root(&app);
-  let worktree_path = resolve_agent_workdir(&repo_path, &agent_id);
+  let worktree_path = resolve_agent_workdir(db, &repo_path, &agent_id)?;
 
   let envs = agent_envs(&agent_id, &worktree_path);
   let cmd = build_command(program, args, Some(worktree_path), envs);
@@ -300,8 +318,9 @@ pub fn agent_spawn_engine(
     .ok_or_else(|| format!("no adapter registered for engine type '{engine_type}'"))?;
   let adapter_id = adapter.id().to_string();
 
+  let db = app.try_state::<AppDb>().map(|s| s.inner());
   let repo_path = resolve_repo_root(&app);
-  let worktree_path = resolve_agent_workdir(&repo_path, &agent_id);
+  let worktree_path = resolve_agent_workdir(db, &repo_path, &agent_id)?;
 
   // Frontend workdir/env göndermemişse backend tamamlar.
   let mut opts = options;

@@ -1,8 +1,15 @@
 # Sprint FAZ1-WP05 — Worktree Otomasyonu ve Runtime İzolasyonu
 
 > **Kart:** FAZ1-PLANI.md §5 WP-5 · ADR-5
-> **Takvim:** Hafta 2 · Gün 6–7 (plan: 2026-08-17 → 2026-08-18) · **Süre:** 8 sa · **Öncelik:** P0
-> **Durum:** ⏳ Planlandı
+> **Takvim:** Hafta 2 · Gün 6–7 (2026-08-17 → 2026-08-18) · **Süre:** 8 sa · **Öncelik:** P0
+> **Durum:** ✅ Kapandı — kod + 5 unit test yazıldı; `cargo test` doğrulaması CI/kullanıcı makinesinde (WP-14'te nihai)
+>
+> **Uygulama notları (2026-08-10):**
+> - `ensure_agent_worktree(repo, agent_id, agent_name, base_branch)`: idempotent; `agent/<slug>-<suffix>` branch.
+> - `prepare_worktree_env` (`.env.local` merge: mevcut anahtarlar korunur) + `link_node_modules` (Unix symlink / Win junction, best-effort).
+> - `resolve_agent_workdir` repo köküne **düşmüyor**; DB'den ajan okur, worktree'yi garanti eder (ADR-5).
+> - `worktree_remove(path, options)`: `delete | keep | commit_and_keep` (docs 6.2); eski `force` imzası options içine taşındı.
+> - `worktree_for_agent` komutu eklendi; `.gitignore`'a `.agentcompany/`.
 
 ## 1. Hedef
 

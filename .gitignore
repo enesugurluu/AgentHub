@@ -32,5 +32,8 @@ src-tauri/gen
 CLAUDE.local.md
 .claude/settings.local.json
 
+# Ajan oturum kayıtları (JSONL transcript — docs 12.2; FAZ1 WP-11)
+.agentcompany/
+
 # Yerel tauri dev hata logu (arti dosya)
 .tauri-dev.err

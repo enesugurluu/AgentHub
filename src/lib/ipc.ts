@@ -98,6 +98,12 @@ export type BranchStrategy =
   | { type: 'existingBranch'; name: string }
   | { type: 'newBranchFrom'; baseBranch: string; name: string }
 
+/** Worktree silme seçenekleri (docs 6.2; WP-05): delete | keep | commit_and_keep. */
+export type WorktreeRemoveOptions = {
+  action: 'delete' | 'keep' | 'commit_and_keep'
+  force?: boolean
+}
+
 /**
  * PTY olayları: Rust tarafında serde tag'i ile `type: "output" | "exit"` olarak
  * serialize edilir. Çıktı ham bayt olarak gelir (UTF-8 çok baytlı karakterlerin
@@ -276,6 +282,14 @@ export function worktreeList(repoPath: string): Promise<WorktreeInfo[]> {
   return invoke<WorktreeInfo[]>('worktree_list', { repoPath })
 }
 
-export function worktreeRemove(worktreePath: string, force?: boolean): Promise<void> {
-  return invoke('worktree_remove', { worktreePath, force })
+export function worktreeRemove(
+  worktreePath: string,
+  options?: WorktreeRemoveOptions,
+): Promise<void> {
+  return invoke('worktree_remove', { worktreePath, options })
+}
+
+/** Ajanın yönetilen worktree'si (spawn öncesi UI bilgisi; WP-07 masa ataması). */
+export function worktreeForAgent(repoPath: string, agentId: string): Promise<WorktreeInfo> {
+  return invoke<WorktreeInfo>('worktree_for_agent', { repoPath, agentId })
 }
