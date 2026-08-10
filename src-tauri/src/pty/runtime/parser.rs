@@ -292,8 +292,9 @@ mod tests {
   fn claude_parser_result_failure() {
     let mut parser = ClaudeStreamJsonParser::default();
     let mut signals = Vec::new();
+    // Not: raw string içinde `\n` escape DEĞİLDİR — satır sonu gerçek newline olmalı.
     parser.feed(
-      br#"{"type":"result","subtype":"error_network","result":"network down"}"#,
+      b"{\"type\":\"result\",\"subtype\":\"error_network\",\"result\":\"network down\"}\n",
       &mut signals,
     );
     assert!(matches!(&signals[0], OutputSignal::TaskFailed { .. }));
@@ -350,12 +351,12 @@ mod tests {
   #[test]
   fn select_parser_mapping() {
     // Davranışsal tür kontrolü: her motor/moda uygun parser seçiliyor mu?
+    // Not: raw string içinde `\n` escape DEĞİLDİR — gerçek newline kullanılır.
     // claude+print → stream-json (usage → Progress).
     let mut p = select_parser("claude", true);
     let mut signals = Vec::new();
     p.feed(
-      br#"{"type":"system","subtype":"usage","usage":{"input_tokens":1},"cost_usd":0.1}
-"#,
+      b"{\"type\":\"system\",\"subtype\":\"usage\",\"usage\":{\"input_tokens\":1},\"cost_usd\":0.1}\n",
       &mut signals,
     );
     assert!(matches!(&signals[0], OutputSignal::Progress { tokens_in: 1, .. }));
@@ -363,8 +364,10 @@ mod tests {
     // opencode → jsonl (session.completed → TaskCompleted).
     let mut p = select_parser("opencode", false);
     let mut signals = Vec::new();
-    p.feed(br#"{"type":"session.completed","reason":"ok"}
-"#, &mut signals);
+    p.feed(
+      b"{\"type\":\"session.completed\",\"reason\":\"ok\"}\n",
+      &mut signals,
+    );
     assert!(matches!(&signals[0], OutputSignal::TaskCompleted { .. }));
 
     // claude interaktif + diğer motorlar → regex ([n/N] → Progress).

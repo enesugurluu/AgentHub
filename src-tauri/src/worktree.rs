@@ -335,7 +335,9 @@ pub fn link_node_modules(worktree_path: &Path, repo_path: &Path) -> bool {
 
     #[cfg(unix)]
     {
-        match std::os::unix::fs::symlink(&src, &dst) {
+        // src (PathBuf) move edilebilir; dst sonra display() için borrow'lu kalır
+        // (clippy::needless_borrows_for_generic_args).
+        match std::os::unix::fs::symlink(src, &dst) {
             Ok(_) => {
                 tracing::info!("node_modules bağlandı: {}", dst.display());
                 true
@@ -348,7 +350,7 @@ pub fn link_node_modules(worktree_path: &Path, repo_path: &Path) -> bool {
     }
     #[cfg(windows)]
     {
-        match std::os::windows::fs::symlink_dir(&src, &dst) {
+        match std::os::windows::fs::symlink_dir(src, &dst) {
             Ok(_) => {
                 tracing::info!("node_modules junction bağlandı: {}", dst.display());
                 true
